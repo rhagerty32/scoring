@@ -48,6 +48,10 @@ export async function finalizeOpenRoundInTransaction(
     return { ok: false, error: "already_locked", message: "Round already locked" };
   }
 
+  if (game.type === "2500" && openRound.playPhase !== "scoring") {
+    return { ok: false, error: "incomplete", message: "Round is still in play" };
+  }
+
   const playerRows = await tx.select().from(players).where(eq(players.gameId, game.id));
   const submitted = await tx.select().from(roundScores).where(eq(roundScores.roundId, openRound.id));
   if (submitted.length < playerRows.length) {
@@ -90,6 +94,9 @@ export async function finalizeOpenRoundInTransaction(
     gameId: game.id,
     number: nextNum,
     lockedAt: null,
+    ...(game.type === "2500"
+      ? { playPhase: "playing", wildRank: null, rankClaimsJson: "{}" }
+      : { playPhase: null, wildRank: null, rankClaimsJson: null }),
   });
   await tx.update(games).set({ currentRound: nextNum }).where(eq(games.id, game.id));
   return { ok: true, status: "active", currentRound: nextNum, maxScore };

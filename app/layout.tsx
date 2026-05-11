@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
+import { AuthBar } from "@/components/AuthBar";
 import { DisablePinchZoom } from "@/components/DisablePinchZoom";
 import { Providers } from "./providers";
 import "./globals.css";
@@ -41,10 +42,15 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className={`${geistSans.variable} ${geistMono.variable} min-h-dvh antialiased`}>
-      <body className="flex min-h-dvh flex-col">
+    <html lang="en" className={`${geistSans.variable} ${geistMono.variable} h-dvh min-h-0 antialiased`}>
+      <body className="flex h-full min-h-0 flex-col overflow-hidden">
         <DisablePinchZoom />
-        <Providers>{children}</Providers>
+        <Providers>
+          <div className="flex min-h-0 flex-1 flex-col">
+            <AuthBar />
+            <main className="min-h-0 flex-1 overflow-y-auto overscroll-y-contain">{children}</main>
+          </div>
+        </Providers>
       </body>
     </html>
   );

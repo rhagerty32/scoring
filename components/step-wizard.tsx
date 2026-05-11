@@ -23,7 +23,7 @@ export function scheduleAfterEnterStable(fn: () => void): () => void {
   };
 }
 
-/** Spring tuned for crisp, Reanimated-like step changes on the web (Motion uses the WAAPI spring solver). */
+/** Spring tuned for crisp step changes on the web (Motion WAAPI spring solver). */
 export const wizardSpring = {
   type: "spring" as const,
   stiffness: 520,
@@ -51,7 +51,10 @@ type AnimatedWizardStepProps = {
   children: React.ReactNode;
   className?: string;
   axis?: "x" | "y";
-  /** `sync` mounts the next step while the previous exits — better for focusing inputs; default `wait`. */
+  /**
+   * `wait`: exit finishes before enter (default). `sync`: overlap; inner grid stacks steps in one cell so height
+   * does not double.
+   */
   presenceMode?: "wait" | "sync";
   /** Fires when this step’s enter → center motion finishes (exit completions use the exiting slide’s key). */
   onStepEnterComplete?: (stepKey: string | number) => void;
@@ -111,22 +114,33 @@ export function AnimatedWizardStep({
       ? `relative min-w-0 overflow-x-hidden overflow-y-visible ${className}`
       : "relative min-w-0 overflow-x-hidden overflow-y-visible";
 
-  return (
-    <div className={outer}>
-      <AnimatePresence mode={presenceMode} custom={direction}>
-        <WizardStepMotion
-          key={stepKey}
-          slideKey={stepKey}
-          direction={direction}
-          axis={axis}
-          motionClassName="min-w-0 w-full"
-          onStepEnterComplete={onStepEnterComplete}
-        >
-          {children}
-        </WizardStepMotion>
-      </AnimatePresence>
-    </div>
+  const presence = (
+    <AnimatePresence mode={presenceMode} custom={direction}>
+      <WizardStepMotion
+        key={stepKey}
+        slideKey={stepKey}
+        direction={direction}
+        axis={axis}
+        motionClassName="min-w-0 w-full"
+        onStepEnterComplete={onStepEnterComplete}
+      >
+        {children}
+      </WizardStepMotion>
+    </AnimatePresence>
   );
+
+  // `sync` mounts exit + enter together; one grid cell keeps them from stacking vertically in layout.
+  if (presenceMode === "sync") {
+    return (
+      <div className={outer}>
+        <div className="grid w-full min-w-0 min-h-0 grid-cols-1 grid-rows-1 [&>*]:col-start-1 [&>*]:row-start-1 [&>*]:min-w-0">
+          {presence}
+        </div>
+      </div>
+    );
+  }
+
+  return <div className={outer}>{presence}</div>;
 }
 
 /** Focus the given element when `deps` change (e.g. step index), after layout. */

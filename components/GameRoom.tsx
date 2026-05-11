@@ -2,9 +2,12 @@
 
 import { type QueryClient, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
+import QRCode from "react-qr-code";
 import { useCallback, useEffect, useId, useRef, useState, type KeyboardEvent } from "react";
 import { CopyTextButton } from "@/components/CopyTextButton";
+import { Game2500RoundPanel } from "@/components/games/Game2500RoundPanel";
 import { AnimatedWizardStep, scheduleAfterEnterStable } from "@/components/step-wizard";
+import { randomGuestDisplayName } from "@/lib/client/randomGuestName";
 import {
     getOrCreateClientKey,
     readHostToken,
@@ -38,7 +41,11 @@ async function fetchGame(code: string): Promise<PublicGamePayload> {
     const headers = new Headers();
     const host = readHostToken(code);
     if (host) headers.set("x-host-token", host);
-    const res = await fetch(`/api/games/${encodeURIComponent(code)}`, { headers, cache: "no-store" });
+    const res = await fetch(`/api/games/${encodeURIComponent(code)}`, {
+        headers,
+        cache: "no-store",
+        credentials: "include",
+    });
     if (!res.ok) {
         const err = await res.json().catch(() => ({}));
         throw new Error((err as { error?: string }).error ?? "Failed to load game");
@@ -77,6 +84,7 @@ export function GameRoom({ code }: { code: string }) {
         mutationFn: async () => {
             const res = await fetch(`/api/games/${encodeURIComponent(normalized)}/join`, {
                 method: "POST",
+                credentials: "include",
                 headers: { "content-type": "application/json" },
                 body: JSON.stringify({
                     displayName: joinName.trim(),
@@ -101,6 +109,7 @@ export function GameRoom({ code }: { code: string }) {
             if (!host) throw new Error("Missing host session");
             const res = await fetch(`/api/games/${encodeURIComponent(normalized)}/start`, {
                 method: "POST",
+                credentials: "include",
                 headers: { "x-host-token": host },
             });
             const data = await res.json().catch(() => ({}));
@@ -116,6 +125,7 @@ export function GameRoom({ code }: { code: string }) {
             if (!host) throw new Error("Missing host session");
             const res = await fetch(`/api/games/${encodeURIComponent(normalized)}/settings`, {
                 method: "PATCH",
+                credentials: "include",
                 headers: { "content-type": "application/json", "x-host-token": host },
                 body: JSON.stringify(payload),
             });
@@ -207,11 +217,12 @@ function GameRoomInner({
                 <div className="rounded-2xl border border-[var(--game-warn)]/45 bg-[var(--game-surface)] p-4 shadow-[var(--game-shadow)] sm:rounded-[var(--game-radius)] sm:p-5">
                     <p className="text-base font-semibold text-[var(--game-warn)]">Join to enter scores</p>
                     <p className="mt-2 text-pretty text-sm leading-relaxed text-[var(--game-muted)] sm:text-xs">
-                        This game is in progress. Choose a display name to join the room.
+                        This game is in progress. Join as a guest: type a display name or tap{" "}
+                        <span className="font-medium text-[var(--game-text)]">Random name</span>, then join.
                     </p>
-                    <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-stretch">
+                    <div className="mt-4 flex flex-col gap-3">
                         <input
-                            className={`${FIELD} sm:flex-1`}
+                            className={FIELD}
                             placeholder="Your name"
                             autoComplete="nickname"
                             autoFocus
@@ -224,14 +235,24 @@ function GameRoomInner({
                                 }
                             }}
                         />
-                        <button
-                            type="button"
-                            className={`${BTN_PRIMARY} shrink-0 sm:w-auto sm:min-w-[8.5rem]`}
-                            disabled={joining || joinName.trim().length === 0}
-                            onClick={onJoin}
-                        >
-                            {joining ? "Joining…" : "Join"}
-                        </button>
+                        <div className="flex flex-col gap-2 sm:flex-row sm:items-stretch">
+                            <button
+                                type="button"
+                                className={`${BTN_GHOST} shrink-0 sm:min-w-[10.5rem]`}
+                                disabled={joining}
+                                onClick={() => setJoinName(randomGuestDisplayName())}
+                            >
+                                Random name
+                            </button>
+                            <button
+                                type="button"
+                                className={`${BTN_PRIMARY} min-w-0 flex-1`}
+                                disabled={joining || joinName.trim().length === 0}
+                                onClick={onJoin}
+                            >
+                                {joining ? "Joining…" : "Join"}
+                            </button>
+                        </div>
                     </div>
                     {joinError ? <p className="mt-3 text-base text-[var(--game-warn)] sm:text-sm">{joinError}</p> : null}
                 </div>
@@ -302,7 +323,7 @@ function GameRoomInner({
                                     Chart
                                 </h2>
                                 <ScoreChart game={game} />
-                                <GroupStatsAwards game={game} />
+                                {game.type !== "2500" ? <GroupStatsAwards game={game} /> : null}
                             </>
                         ) : (
                             <button
@@ -319,9 +340,6 @@ function GameRoomInner({
                     </div>
 
                     <aside className="order-1 flex min-h-0 flex-col gap-4 md:sticky md:top-4 md:order-2 md:self-start">
-                        {(game.status === "active" || game.status === "done") && stored ? (
-                            <YourStatsCard game={game} playerId={stored.playerId} />
-                        ) : null}
                         {game.status === "active" ? (
                             <RoundPanel
                                 game={game}
@@ -329,6 +347,9 @@ function GameRoomInner({
                                 code={normalized}
                                 onSaved={() => void qc.invalidateQueries({ queryKey: ["game", normalized] })}
                             />
+                        ) : null}
+                        {(game.status === "active" || game.status === "done") && stored ? (
+                            <YourStatsCard game={game} playerId={stored.playerId} />
                         ) : null}
                     </aside>
                 </section>
@@ -362,6 +383,14 @@ function InviteLinkBlock({ code, stacked }: { code: string; stacked?: boolean })
                 disabled={!absoluteUrl}
                 className={`${BTN_GHOST} mt-3 w-full ${stacked ? "" : "sm:ml-auto sm:w-auto"}`}
             />
+            {absoluteUrl ? (
+                <div className="mt-4 flex flex-col items-center gap-2">
+                    <p className="text-xs text-[var(--game-muted)]">Scan to join</p>
+                    <div className="rounded-xl bg-white p-2">
+                        <QRCode value={absoluteUrl} size={stacked ? 140 : 160} level="M" />
+                    </div>
+                </div>
+            ) : null}
         </div>
     );
 }
@@ -388,8 +417,17 @@ function RoomDetailsFields({ game, variant }: { game: PublicGamePayload; variant
                     />
                 </div>
                 <p className="mt-2 text-pretty text-base leading-relaxed text-[var(--game-muted)] sm:text-sm">
-                    First to <span className="font-medium text-[var(--game-text)]">{game.targetScore}</span> · Round win bonus{" "}
-                    <span className="font-medium text-[var(--game-text)]">{game.roundWinBonus}</span>
+                    {game.type === "2500" ? (
+                        <>
+                            Play to <span className="font-medium text-[var(--game-text)]">{game.targetScore}</span> points ·
+                            Meld tracker and wild card per round · Aces low (A below 3)
+                        </>
+                    ) : (
+                        <>
+                            First to <span className="font-medium text-[var(--game-text)]">{game.targetScore}</span> · Round win
+                            bonus <span className="font-medium text-[var(--game-text)]">{game.roundWinBonus}</span>
+                        </>
+                    )}
                 </p>
             </div>
             <div
@@ -533,7 +571,20 @@ function Lobby({
     const persistSettingsIfDirty = useCallback(async () => {
         const ts = Number(targetScore);
         const rwb = Number(roundWinBonus);
-        if (!Number.isFinite(ts) || !Number.isFinite(rwb)) return;
+        if (!Number.isFinite(ts)) return;
+        if (game.type === "2500") {
+            if (ts === game.targetScore) return;
+            setSettingsNote("saving");
+            try {
+                await onSaveSettings({ targetScore: ts, roundWinBonus: 0 });
+                setSettingsNote("saved");
+                window.setTimeout(() => setSettingsNote("idle"), 2000);
+            } catch {
+                setSettingsNote("idle");
+            }
+            return;
+        }
+        if (!Number.isFinite(rwb)) return;
         if (ts === game.targetScore && rwb === game.roundWinBonus) return;
         setSettingsNote("saving");
         try {
@@ -543,7 +594,7 @@ function Lobby({
         } catch {
             setSettingsNote("idle");
         }
-    }, [targetScore, roundWinBonus, game.targetScore, game.roundWinBonus, onSaveSettings]);
+    }, [targetScore, roundWinBonus, game.targetScore, game.roundWinBonus, game.type, onSaveSettings]);
 
     const handleStart = async () => {
         await persistSettingsIfDirty();
@@ -555,7 +606,8 @@ function Lobby({
             <div className="rounded-2xl border border-white/10 bg-[var(--game-surface)] p-5 shadow-[var(--game-shadow)] sm:rounded-[var(--game-radius)]">
                 <h2 className="text-xl font-semibold text-[var(--game-text)] sm:text-lg">Join this room</h2>
                 <p className="mt-2 text-pretty text-base leading-relaxed text-[var(--game-muted)] sm:text-sm">
-                    Choose a display name. This browser will remember you for this room.
+                    Join as a guest: type a display name or tap Random name. This browser will remember you for this
+                    room.
                 </p>
                 {!stored ? (
                     <div className="mt-5 flex flex-col gap-4">
@@ -574,14 +626,24 @@ function Lobby({
                             }}
                         />
                         {joinError ? <p className="text-base text-[var(--game-warn)] sm:text-sm">{joinError}</p> : null}
-                        <button
-                            type="button"
-                            className={BTN_PRIMARY}
-                            disabled={joining || joinName.trim().length === 0}
-                            onClick={onJoin}
-                        >
-                            {joining ? "Joining…" : "Join"}
-                        </button>
+                        <div className="flex flex-col gap-2 sm:flex-row sm:items-stretch">
+                            <button
+                                type="button"
+                                className={`${BTN_GHOST} shrink-0 sm:min-w-[10.5rem]`}
+                                disabled={joining}
+                                onClick={() => setJoinName(randomGuestDisplayName())}
+                            >
+                                Random name
+                            </button>
+                            <button
+                                type="button"
+                                className={`${BTN_PRIMARY} min-w-0 flex-1`}
+                                disabled={joining || joinName.trim().length === 0}
+                                onClick={onJoin}
+                            >
+                                {joining ? "Joining…" : "Join"}
+                            </button>
+                        </div>
                     </div>
                 ) : (
                     <p className="mt-5 text-base text-[var(--game-accent-2)] sm:text-sm">
@@ -611,7 +673,7 @@ function Lobby({
 
                 {game.youAreHost ? (
                     <div className="mt-6 space-y-5 border-t border-white/10 pt-6">
-                        <div className="grid gap-5 sm:grid-cols-2 sm:gap-4">
+                        <div className={`grid gap-5 sm:gap-4 ${game.type === "2500" ? "" : "sm:grid-cols-2"}`}>
                             <label className="text-sm font-medium text-[var(--game-muted)] sm:text-xs">
                                 Target score
                                 <input
@@ -622,16 +684,18 @@ function Lobby({
                                     onBlur={() => void persistSettingsIfDirty()}
                                 />
                             </label>
-                            <label className="text-sm font-medium text-[var(--game-muted)] sm:text-xs">
-                                Round win bonus
-                                <input
-                                    className={`${FIELD} mt-2 font-mono`}
-                                    inputMode="numeric"
-                                    value={roundWinBonus}
-                                    onChange={(e) => setRoundWinBonus(e.target.value)}
-                                    onBlur={() => void persistSettingsIfDirty()}
-                                />
-                            </label>
+                            {game.type !== "2500" ? (
+                                <label className="text-sm font-medium text-[var(--game-muted)] sm:text-xs">
+                                    Round win bonus
+                                    <input
+                                        className={`${FIELD} mt-2 font-mono`}
+                                        inputMode="numeric"
+                                        value={roundWinBonus}
+                                        onChange={(e) => setRoundWinBonus(e.target.value)}
+                                        onBlur={() => void persistSettingsIfDirty()}
+                                    />
+                                </label>
+                            ) : null}
                         </div>
                         <p className="text-xs text-[var(--game-muted)]">
                             Settings save when you leave a field.{" "}
@@ -673,6 +737,19 @@ function RoundSubmissionRoster({
             </div>
         );
     }
+    const is2500Playing = game.type === "2500" && current.playPhase === "playing";
+    if (is2500Playing) {
+        return (
+            <div className="mt-6 rounded-xl border border-white/10 bg-black/20 px-4 py-3">
+                <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[var(--game-muted)] sm:text-[0.65rem]">
+                    Scoring
+                </p>
+                <p className="mt-3 text-pretty text-xs leading-relaxed text-[var(--game-muted)] sm:text-[0.65rem]">
+                    The host will end the round when play stops; then everyone enters their score here.
+                </p>
+            </div>
+        );
+    }
     const submitted = new Set(current.scores.map((s) => s.playerId));
 
     return (
@@ -703,11 +780,15 @@ function RoundSubmissionRoster({
             </ul>
             {game.currentRoundComplete ? (
                 <p className="mt-3 text-pretty text-xs leading-relaxed text-[var(--game-muted)] sm:text-[0.65rem]">
-                    All scores are in. The round will advance on its own.
+                    {game.type === "2500"
+                        ? "All scores are in. The next round starts automatically."
+                        : "All scores are in. The round will advance on its own."}
                 </p>
             ) : (
                 <p className="mt-3 text-pretty text-xs leading-relaxed text-[var(--game-muted)] sm:text-[0.65rem]">
-                    The round locks once every player has saved their row.
+                    {game.type === "2500"
+                        ? "When everyone has finished scoring, the round locks and the next round begins."
+                        : "The round locks once every player has saved their row."}
                 </p>
             )}
         </div>
@@ -735,7 +816,9 @@ function RoundPanel({
     }, [formKey]);
 
     const reviewStep = Boolean(stored && wizardStep === 2);
-    const panelLayout = reviewStep
+    /** 2500 uses Game2500RoundPanel (no wizard steps); avoid a clipped scroll area so play UI is fully visible. */
+    const relaxPanelHeight = reviewStep || game.type === "2500";
+    const panelLayout = relaxPanelHeight
         ? "max-md:max-h-none max-md:overflow-visible md:min-h-0 md:overflow-visible"
         : "max-md:max-h-[min(90dvh,36rem)] max-md:overflow-y-auto md:max-h-none md:min-h-[min(36rem,calc(100dvh-6rem))] md:overflow-visible";
 
@@ -743,11 +826,20 @@ function RoundPanel({
         <div
             className={`flex min-h-0 flex-col rounded-2xl border border-white/10 bg-[var(--game-surface)] p-5 shadow-[var(--game-shadow)] sm:rounded-[var(--game-radius)] ${panelLayout}`}
         >
-            <h3 className="text-lg font-semibold text-[var(--game-text)]">Round {game.currentRound}</h3>
+            <h3 className="text-lg font-semibold text-[var(--game-text)]">
+                Round {game.currentRound}
+                {game.type === "2500" && current ? (
+                    <span className="ml-2 text-sm font-normal text-[var(--game-muted)]">
+                        · {current.playPhase === "playing" ? "Play" : current.playPhase === "scoring" ? "Score" : ""}
+                    </span>
+                ) : null}
+            </h3>
             {!stored ? (
                 <p className="mt-3 text-pretty text-base leading-relaxed text-[var(--game-muted)] sm:text-sm">
                     Join from the lobby first. If you just joined, refresh the page to update.
                 </p>
+            ) : game.type === "2500" ? (
+                <Game2500RoundPanel game={game} stored={stored} code={code} onSaved={onSaved} />
             ) : (
                 <RoundScoreForm
                     key={formKey}
@@ -863,6 +955,7 @@ function RoundScoreForm({
         try {
             const res = await fetch(`/api/games/${encodeURIComponent(code)}/scores`, {
                 method: "POST",
+                credentials: "include",
                 headers: {
                     "content-type": "application/json",
                     "x-player-token": stored.playerToken,

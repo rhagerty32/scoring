@@ -13,7 +13,7 @@ export function GameTheme({ type, children }: { type: string; children: React.Re
       style={vars}
       className="game-shell flex min-h-dvh flex-col pb-[env(safe-area-inset-bottom,0px)]"
     >
-      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-y-contain">{children}</div>
+      {children}
     </div>
   );
 }

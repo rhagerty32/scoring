@@ -1,4 +1,4 @@
-export type GameTypeId = "nertz" | "swoop";
+export type GameTypeId = "nertz" | "swoop" | "2500";
 
 export type GameDefinition = {
   id: GameTypeId;
@@ -52,6 +52,28 @@ export const GAME_REGISTRY: GameDefinition[] = [
         "--game-muted": "#8fa39a",
         "--game-radius": "12px",
         "--game-shadow": "0 16px 40px rgba(0, 0, 0, 0.4)",
+      },
+    },
+  },
+  {
+    id: "2500",
+    label: "2500",
+        description:
+            "Race to a target score with meld tracking, wild card, and round scoring. Aces are low in rank (below 3); scoring still uses ±100 for aces.",
+    enabled: true,
+    theme: {
+      dataAttr: "game-2500",
+      cssVars: {
+        "--game-bg": "#0f1420",
+        "--game-surface": "#161d2e",
+        "--game-surface-2": "#1e2738",
+        "--game-accent": "#a78bfa",
+        "--game-accent-2": "#38bdf8",
+        "--game-warn": "#fbbf24",
+        "--game-text": "#f1f5f9",
+        "--game-muted": "#94a3b8",
+        "--game-radius": "14px",
+        "--game-shadow": "0 18px 50px rgba(0, 0, 0, 0.5)",
       },
     },
   },

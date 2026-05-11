@@ -5,10 +5,12 @@ import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { AnimatedWizardStep, useFocusWhen } from "@/components/step-wizard";
 import { GameTheme } from "@/components/GameTheme";
-import { GAME_REGISTRY } from "@/lib/games/registry";
+import { GAME_REGISTRY, type GameTypeId } from "@/lib/games/registry";
 import { writeHostToken } from "@/lib/client/storage";
 
-const CREATE_STEPS = 4;
+function createWizardSteps(gameType: GameTypeId): number {
+  return gameType === "2500" ? 3 : 4;
+}
 
 const field =
   "min-h-12 w-full rounded-2xl border border-white/15 bg-black/25 px-4 text-base text-[var(--game-text)] outline-none transition focus:border-[var(--game-accent)] focus:ring-2 focus:ring-[var(--game-accent)]/30";
@@ -21,13 +23,26 @@ const btnGhost =
 
 export default function Home() {
   const router = useRouter();
-  const [gameType, setGameType] = useState<"nertz" | "swoop">("nertz");
+  const [gameType, setGameType] = useState<GameTypeId>("nertz");
   const [targetScore, setTargetScore] = useState("100");
   const [roundWinBonus, setRoundWinBonus] = useState("10");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [step, setStep] = useState(0);
   const [direction, setDirection] = useState(1);
+
+  const CREATE_STEPS = createWizardSteps(gameType);
+
+  useEffect(() => {
+    if (gameType === "2500") {
+      setTargetScore("2500");
+      setRoundWinBonus("0");
+    } else {
+      setTargetScore("100");
+      setRoundWinBonus("10");
+    }
+    setStep(0);
+  }, [gameType]);
 
   const selectRef = useRef<HTMLSelectElement>(null);
   const targetRef = useRef<HTMLInputElement>(null);
@@ -36,8 +51,8 @@ export default function Home() {
 
   useFocusWhen([step], selectRef, step === 0);
   useFocusWhen([step], targetRef, step === 1);
-  useFocusWhen([step], bonusRef, step === 2);
-  useFocusWhen([step], createRef, step === 3);
+  useFocusWhen([step, gameType], bonusRef, step === 2 && gameType !== "2500");
+  useFocusWhen([step, gameType], createRef, step === (gameType === "2500" ? 2 : 3));
 
   useEffect(() => {
     const onKey = (e: globalThis.KeyboardEvent) => {
@@ -53,7 +68,7 @@ export default function Home() {
 
   const goNext = () => {
     setDirection(1);
-    setStep((s) => Math.min(CREATE_STEPS - 1, s + 1));
+    setStep((s) => Math.min(createWizardSteps(gameType) - 1, s + 1));
   };
 
   const goBack = () => {
@@ -71,14 +86,15 @@ export default function Home() {
         setBusy(false);
         return;
       }
+      const body =
+        gameType === "2500"
+          ? { type: "2500" as const, targetScore: Number(targetScore) }
+          : { type: "nertz" as const, targetScore: Number(targetScore), roundWinBonus: Number(roundWinBonus) };
       const res = await fetch("/api/games", {
         method: "POST",
+        credentials: "include",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          type: gameType,
-          targetScore: Number(targetScore),
-          roundWinBonus: Number(roundWinBonus),
-        }),
+        body: JSON.stringify(body),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error((data as { error?: string }).error ?? "Could not create game");
@@ -135,16 +151,16 @@ export default function Home() {
   );
 
   return (
-    <GameTheme type="nertz">
+    <GameTheme type={gameType}>
       <main className="mx-auto flex w-full max-w-xl flex-col px-[max(1rem,env(safe-area-inset-left))] py-5 pr-[max(1rem,env(safe-area-inset-right))] pb-[max(2rem,env(safe-area-inset-bottom))] pt-[max(1.25rem,env(safe-area-inset-top))] sm:p-10">
         <header className="shrink-0">
           <p className="text-xs uppercase tracking-[0.25em] text-[var(--game-muted)]">Good Game</p>
           <h1 className="mt-2 text-balance text-2xl font-semibold leading-tight text-[var(--game-text)] sm:text-3xl">
-            Nertz scoring in a shared room
+            Tabletop scoring in a shared room
           </h1>
           <p className="mt-3 text-pretty text-sm leading-relaxed text-[var(--game-muted)] sm:text-sm">
-            Create a room, share the link, and each player enters their own round scores until everyone has saved—then
-            the next round opens automatically.
+            Pick a game, create a room, and share the link. Everyone joins from their own phone while one browser keeps
+            the host tools and invite QR.
           </p>
         </header>
 
@@ -163,7 +179,7 @@ export default function Home() {
                     ref={selectRef}
                     className={`${field} mt-2`}
                     value={gameType}
-                    onChange={(e) => setGameType(e.target.value as "nertz" | "swoop")}
+                    onChange={(e) => setGameType(e.target.value as GameTypeId)}
                     onKeyDown={onInputEnter}
                   >
                     {GAME_REGISTRY.map((g) => (
@@ -193,7 +209,7 @@ export default function Home() {
                 {nav}
               </div>
             ) : null}
-            {step === 2 ? (
+            {step === 2 && gameType !== "2500" ? (
               <div className="flex flex-col justify-start sm:flex-1 sm:justify-center">
                 <label className="text-sm font-medium text-[var(--game-muted)] sm:text-xs">
                   Round win bonus
@@ -206,6 +222,27 @@ export default function Home() {
                     onKeyDown={onInputEnter}
                   />
                 </label>
+                {nav}
+              </div>
+            ) : null}
+            {step === 2 && gameType === "2500" ? (
+              <div className="flex flex-col justify-start gap-4 sm:flex-1 sm:justify-center">
+                <p className="text-sm font-medium text-[var(--game-muted)] sm:text-xs">Review</p>
+                <ul className="space-y-2 rounded-2xl border border-white/10 bg-black/15 px-4 py-4 text-base text-[var(--game-text)] sm:text-sm">
+                  <li className="flex justify-between gap-4">
+                    <span className="text-[var(--game-muted)]">Game</span>
+                    <span className="font-medium">{GAME_REGISTRY.find((g) => g.id === gameType)?.label}</span>
+                  </li>
+                  <li className="flex justify-between gap-4">
+                    <span className="text-[var(--game-muted)]">Play to</span>
+                    <span className="font-mono font-medium">{targetScore}</span>
+                  </li>
+                </ul>
+                {error ? <p className="text-base text-[var(--game-warn)] sm:text-sm">{error}</p> : null}
+                <p className="text-pretty text-sm leading-relaxed text-[var(--game-muted)]">
+                  The host ends each round of play, then everyone logs their score on their own device. When all scores
+                  are in, the next round starts.
+                </p>
                 {nav}
               </div>
             ) : null}

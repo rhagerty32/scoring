@@ -1,5 +1,31 @@
 import { index, integer, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
 
+export const users = sqliteTable(
+  "users",
+  {
+    id: text("id").primaryKey(),
+    /** Normalized lowercase for uniqueness and login search. */
+    username: text("username").notNull(),
+    passwordHash: text("password_hash").notNull(),
+    createdAt: integer("created_at").notNull(),
+  },
+  (t) => [uniqueIndex("users_username_idx").on(t.username)]
+);
+
+export const sessions = sqliteTable(
+  "sessions",
+  {
+    id: text("id").primaryKey(),
+    tokenHash: text("token_hash").notNull(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    expiresAt: integer("expires_at").notNull(),
+    createdAt: integer("created_at").notNull(),
+  },
+  (t) => [uniqueIndex("sessions_token_hash_idx").on(t.tokenHash), index("sessions_user_idx").on(t.userId)]
+);
+
 export const games = sqliteTable(
   "games",
   {
@@ -28,10 +54,12 @@ export const players = sqliteTable(
     playerToken: text("player_token").notNull(),
     clientKey: text("client_key"),
     joinedAt: integer("joined_at").notNull(),
+    userId: text("user_id").references(() => users.id, { onDelete: "set null" }),
   },
   (t) => [
     index("players_game_idx").on(t.gameId),
     uniqueIndex("players_game_client_key_idx").on(t.gameId, t.clientKey),
+    index("players_user_idx").on(t.userId),
   ]
 );
 
@@ -44,6 +72,11 @@ export const rounds = sqliteTable(
       .references(() => games.id, { onDelete: "cascade" }),
     number: integer("number").notNull(),
     lockedAt: integer("locked_at"),
+    /** `playing` | `scoring` for game type 2500; NULL for legacy Nertz rounds. */
+    playPhase: text("play_phase"),
+    wildRank: text("wild_rank"),
+    /** JSON: { [rank]: playerId } — who marked each rank as played down. */
+    rankClaimsJson: text("rank_claims_json"),
   },
   (t) => [
     index("rounds_game_idx").on(t.gameId),
@@ -65,10 +98,14 @@ export const roundScores = sqliteTable(
     penalty: integer("penalty").notNull(),
     bonus: integer("bonus").notNull(),
     total: integer("total").notNull(),
+    /** JSON: calculator tap counts for 2500 analytics (e.g. p100, m100). */
+    scoreMetaJson: text("score_meta_json"),
   },
   (t) => [uniqueIndex("round_scores_round_player_idx").on(t.roundId, t.playerId)]
 );
 
+export type UserRow = typeof users.$inferSelect;
+export type SessionRow = typeof sessions.$inferSelect;
 export type GameRow = typeof games.$inferSelect;
 export type PlayerRow = typeof players.$inferSelect;
 export type RoundRow = typeof rounds.$inferSelect;

@@ -2,6 +2,7 @@ import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 import { getDb } from "@/lib/db";
 import { games, players, roundScores, rounds } from "@/lib/db/schema";
+import { normalizeScoreTapMeta, parse2500ScorePayload } from "@/lib/games/game2500";
 import { parseScorePayload } from "@/lib/games/nertz";
 import { randomId } from "@/lib/ids";
 import { badRequest, json, notFound, unauthorized } from "@/lib/server/httpJson";
@@ -9,11 +10,23 @@ import { finalizeOpenRoundInTransaction, selectGameById } from "@/lib/server/rou
 
 export const runtime = "nodejs";
 
+const scoreMetaSchema = z
+  .object({
+    p5: z.coerce.number().int().min(0).max(10_000).optional(),
+    m5: z.coerce.number().int().min(0).max(10_000).optional(),
+    p10: z.coerce.number().int().min(0).max(10_000).optional(),
+    m10: z.coerce.number().int().min(0).max(10_000).optional(),
+    p100: z.coerce.number().int().min(0).max(10_000).optional(),
+    m100: z.coerce.number().int().min(0).max(10_000).optional(),
+  })
+  .optional();
+
 const scoreBody = z.object({
   playerId: z.string().min(1),
   score: z.coerce.number().int(),
   penalty: z.coerce.number().int(),
   bonus: z.coerce.number().int(),
+  scoreMeta: scoreMetaSchema,
 });
 
 type RouteCtx = { params: Promise<{ code: string }> };
@@ -68,20 +81,31 @@ export async function POST(req: Request, ctx: RouteCtx) {
     if (!round) return { error: "No active round", status: 400 };
     if (round.lockedAt != null) return { error: "Round is locked", status: 400 };
 
-    const allowedBonus = new Set([0, game.roundWinBonus]);
-    if (!allowedBonus.has(parsed.data.bonus)) {
-      return { error: "Bonus must be 0 or the round win bonus", status: 400 };
-    }
+    let totals: { score: number; penalty: number; bonus: number; total: number };
+    let scoreMetaJson: string | null = null;
 
-    const totals = parseScorePayload(parsed.data);
+    if (game.type === "2500") {
+      if (round.playPhase !== "scoring") {
+        return { error: "The host has not ended this round yet", status: 400 };
+      }
+      totals = parse2500ScorePayload(parsed.data);
+      scoreMetaJson =
+        parsed.data.scoreMeta != null ? JSON.stringify(normalizeScoreTapMeta(parsed.data.scoreMeta)) : null;
+    } else {
+      const allowedBonus = new Set([0, game.roundWinBonus]);
+      if (!allowedBonus.has(parsed.data.bonus)) {
+        return { error: "Bonus must be 0 or the round win bonus", status: 400 };
+      }
+      totals = parseScorePayload(parsed.data);
 
-    if (totals.bonus === game.roundWinBonus && game.roundWinBonus > 0) {
-      const peerRows = await tx.select().from(roundScores).where(eq(roundScores.roundId, round.id));
-      const takenByOther = peerRows.some(
-        (row) => row.playerId !== player.id && row.bonus === game.roundWinBonus,
-      );
-      if (takenByOther) {
-        return { error: "Another player already claimed the round win", status: 400 };
+      if (totals.bonus === game.roundWinBonus && game.roundWinBonus > 0) {
+        const peerRows = await tx.select().from(roundScores).where(eq(roundScores.roundId, round.id));
+        const takenByOther = peerRows.some(
+          (row) => row.playerId !== player.id && row.bonus === game.roundWinBonus,
+        );
+        if (takenByOther) {
+          return { error: "Another player already claimed the round win", status: 400 };
+        }
       }
     }
 
@@ -100,6 +124,7 @@ export async function POST(req: Request, ctx: RouteCtx) {
           penalty: totals.penalty,
           bonus: totals.bonus,
           total: totals.total,
+          scoreMetaJson: game.type === "2500" ? scoreMetaJson : null,
         })
         .where(eq(roundScores.id, existing.id));
       scoreRowId = existing.id;
@@ -113,6 +138,7 @@ export async function POST(req: Request, ctx: RouteCtx) {
         penalty: totals.penalty,
         bonus: totals.bonus,
         total: totals.total,
+        scoreMetaJson: game.type === "2500" ? scoreMetaJson : null,
       });
     }
 

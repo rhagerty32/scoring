@@ -36,6 +36,9 @@ export async function POST(req: Request, ctx: RouteCtx) {
       gameId: game.id,
       number: 1,
       lockedAt: null,
+      ...(game.type === "2500"
+        ? { playPhase: "playing", wildRank: null, rankClaimsJson: "{}" }
+        : { playPhase: null, wildRank: null, rankClaimsJson: null }),
     });
   });
 

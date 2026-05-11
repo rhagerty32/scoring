@@ -4,6 +4,7 @@ import { getDb } from "@/lib/db";
 import { games, players } from "@/lib/db/schema";
 import { randomId, randomHostToken } from "@/lib/ids";
 import { badRequest, conflict, json, notFound } from "@/lib/server/httpJson";
+import { getSessionUser } from "@/lib/server/session";
 
 export const runtime = "nodejs";
 
@@ -26,6 +27,7 @@ export async function POST(req: Request, ctx: RouteCtx) {
   if (!parsed.success) return badRequest("Invalid body");
 
   const db = getDb();
+  const sessionUser = await getSessionUser(req, db);
   const normalized = code.trim().toUpperCase();
   const [game] = await db.select().from(games).where(eq(games.code, normalized)).limit(1);
   if (!game) return notFound("Game not found");
@@ -38,6 +40,9 @@ export async function POST(req: Request, ctx: RouteCtx) {
       .where(and(eq(players.gameId, game.id), eq(players.clientKey, parsed.data.clientKey)))
       .limit(1);
     if (existing) {
+      if (sessionUser && existing.userId === null) {
+        await db.update(players).set({ userId: sessionUser.userId }).where(eq(players.id, existing.id));
+      }
       return json({ playerId: existing.id, playerToken: existing.playerToken });
     }
   }
@@ -54,6 +59,7 @@ export async function POST(req: Request, ctx: RouteCtx) {
       playerToken,
       clientKey: parsed.data.clientKey ?? null,
       joinedAt: now,
+      userId: sessionUser?.userId ?? null,
     });
   } catch (e) {
     const msg = e instanceof Error ? e.message : "";
@@ -63,7 +69,12 @@ export async function POST(req: Request, ctx: RouteCtx) {
         .from(players)
         .where(and(eq(players.gameId, game.id), eq(players.clientKey, parsed.data.clientKey)))
         .limit(1);
-      if (existing) return json({ playerId: existing.id, playerToken: existing.playerToken });
+      if (existing) {
+        if (sessionUser && existing.userId === null) {
+          await db.update(players).set({ userId: sessionUser.userId }).where(eq(players.id, existing.id));
+        }
+        return json({ playerId: existing.id, playerToken: existing.playerToken });
+      }
     }
     throw e;
   }

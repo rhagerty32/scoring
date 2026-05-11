@@ -7,11 +7,17 @@ import { badRequest, json } from "@/lib/server/httpJson";
 
 export const runtime = "nodejs";
 
-const createBody = z.object({
-  type: z.literal("nertz"),
-  targetScore: z.coerce.number().int().min(1).max(100_000),
-  roundWinBonus: z.coerce.number().int().min(0).max(1000),
-});
+const createBody = z.discriminatedUnion("type", [
+  z.object({
+    type: z.literal("nertz"),
+    targetScore: z.coerce.number().int().min(1).max(100_000),
+    roundWinBonus: z.coerce.number().int().min(0).max(1000),
+  }),
+  z.object({
+    type: z.literal("2500"),
+    targetScore: z.coerce.number().int().min(1).max(100_000),
+  }),
+]);
 
 export async function POST(req: Request) {
   let body: unknown;
@@ -39,7 +45,7 @@ export async function POST(req: Request) {
         code,
         type: parsed.data.type,
         targetScore: parsed.data.targetScore,
-        roundWinBonus: parsed.data.roundWinBonus,
+        roundWinBonus: parsed.data.type === "2500" ? 0 : parsed.data.roundWinBonus,
         status: "lobby",
         currentRound: 0,
         hostToken,
