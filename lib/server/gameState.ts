@@ -1,4 +1,4 @@
-import type { GameRow, PlayerRow, RoundRow, RoundScoreRow } from "@/lib/db/schema";
+import type { GameRow, PlayerRow, RoundRow, RoundScoreRow, TeamRow } from "@/lib/db/schema";
 import { computeGroupAwards, type GroupAward, type PlayerLockedAgg } from "@/lib/games/groupAwards";
 
 export type { GroupAward } from "@/lib/games/groupAwards";
@@ -8,23 +8,48 @@ import {
     type ScoreTapMeta,
     winnerPlayerIds2500,
 } from "@/lib/games/game2500";
+import {
+    parseHandAndFootScoreMetaJson,
+    type HandAndFootScoreMeta,
+    winnerTeamIdsHandAndFoot,
+} from "@/lib/games/handAndFoot";
 import { projectFavorites } from "@/lib/games/nertz";
 
 export type { ScoreTapMeta } from "@/lib/games/game2500";
+export type { HandAndFootScoreMeta } from "@/lib/games/handAndFoot";
+
+export type PublicTeam = {
+    id: string;
+    name: string;
+    sortOrder: number;
+};
 
 export type PublicPlayer = {
     id: string;
     displayName: string;
     joinedAt: number;
+    teamId: string | null;
 };
 
 export type PublicRoundScore = {
     playerId: string;
+    teamId: string | null;
     score: number;
     penalty: number;
     bonus: number;
     total: number;
     scoreMeta: ScoreTapMeta | null;
+    handAndFootMeta: HandAndFootScoreMeta | null;
+};
+
+export type TeamStandingsRow = {
+    teamId: string;
+    teamName: string;
+    playerNames: string[];
+    cumulative: number;
+    round1: number | null;
+    round2: number | null;
+    round3: number | null;
 };
 
 export type PublicRound = {
@@ -62,30 +87,51 @@ export type PublicGamePayload = {
     status: string;
     targetScore: number;
     roundWinBonus: number;
+    /** 2500: when false, meld tracker is hidden for everyone. */
+    showPlayedCards: boolean;
     currentRound: number;
     createdAt: number;
     youAreHost: boolean;
+    teams: PublicTeam[];
     players: PublicPlayer[];
     rounds: PublicRound[];
     standings: StandingsRow[];
+    teamStandings: TeamStandingsRow[];
     projections: { playerId: string; estimatedRoundsRemaining: number | null }[];
     /** Pace projection: lowest estimated rounds-to-target among players with a computable pace. */
     favoritePlayerId: string | null;
     chart: { keys: string[]; points: ChartPoint[] };
     currentRoundComplete: boolean;
     winnerPlayerIds: string[];
+    winnerTeamIds: string[];
     groupAwards: GroupAward[];
 };
 
 export function buildPublicGameState(input: {
     game: GameRow;
+    teams?: TeamRow[];
     players: PlayerRow[];
     rounds: RoundRow[];
     scores: RoundScoreRow[];
     hostTokenHeader: string | null;
 }): PublicGamePayload {
     const { game, players, rounds, scores, hostTokenHeader } = input;
+    const teamRows = input.teams ?? [];
     const youAreHost = Boolean(hostTokenHeader && hostTokenHeader === game.hostToken);
+    const showPlayedCards = game.showPlayedCards !== 0;
+    const publicRankClaims = (json: string | null) =>
+        game.type === "2500" && !showPlayedCards ? {} : parseRankClaimsJson(json);
+
+    if (game.type === "hand-and-foot") {
+        return buildHandAndFootPublicState({
+            game,
+            teams: teamRows,
+            players,
+            rounds,
+            scores,
+            youAreHost,
+        });
+    }
 
     const scoreByRound = new Map<string, RoundScoreRow[]>();
     for (const s of scores) {
@@ -103,15 +149,8 @@ export function buildPublicGameState(input: {
             lockedAt: r.lockedAt,
             playPhase: r.playPhase ?? null,
             wildRank: r.wildRank ?? null,
-            rankClaims: parseRankClaimsJson(r.rankClaimsJson),
-            scores: (scoreByRound.get(r.id) ?? []).map((s) => ({
-                playerId: s.playerId,
-                score: s.score,
-                penalty: s.penalty,
-                bonus: s.bonus,
-                total: s.total,
-                scoreMeta: s.scoreMetaJson != null && s.scoreMetaJson !== "" ? parseScoreTapMeta(s.scoreMetaJson) : null,
-            })),
+            rankClaims: publicRankClaims(r.rankClaimsJson),
+            scores: (scoreByRound.get(r.id) ?? []).map((s) => mapRoundScoreRow(s, game.type)),
         }));
 
     const lockedRounds = publicRounds.filter((r) => r.lockedAt != null).sort((a, b) => a.number - b.number);
@@ -251,21 +290,184 @@ export function buildPublicGameState(input: {
         status: game.status,
         targetScore: game.targetScore,
         roundWinBonus: game.roundWinBonus,
+        showPlayedCards,
         currentRound: game.currentRound,
         createdAt: game.createdAt,
         youAreHost,
+        teams: [],
         players: players.map((p) => ({
             id: p.id,
             displayName: p.displayName,
             joinedAt: p.joinedAt,
+            teamId: p.teamId ?? null,
         })),
         rounds: publicRounds,
         standings,
+        teamStandings: [],
         projections,
         favoritePlayerId,
         chart: { keys: playerIds, points: chartPoints },
         currentRoundComplete,
         winnerPlayerIds,
+        winnerTeamIds: [],
         groupAwards,
+    };
+}
+
+function mapRoundScoreRow(s: RoundScoreRow, gameType: string): PublicRoundScore {
+    const handAndFootMeta =
+        gameType === "hand-and-foot" ? parseHandAndFootScoreMetaJson(s.scoreMetaJson) : null;
+    const scoreMeta =
+        gameType === "2500" && s.scoreMetaJson != null && s.scoreMetaJson !== ""
+            ? parseScoreTapMeta(s.scoreMetaJson)
+            : null;
+    return {
+        playerId: s.playerId,
+        teamId: s.teamId ?? null,
+        score: s.score,
+        penalty: s.penalty,
+        bonus: s.bonus,
+        total: s.total,
+        scoreMeta,
+        handAndFootMeta,
+    };
+}
+
+function buildHandAndFootPublicState(input: {
+    game: GameRow;
+    teams: TeamRow[];
+    players: PlayerRow[];
+    rounds: RoundRow[];
+    scores: RoundScoreRow[];
+    youAreHost: boolean;
+}): PublicGamePayload {
+    const { game, teams, players, rounds, scores, youAreHost } = input;
+    const showPlayedCards = game.showPlayedCards !== 0;
+    const teamIds = teams.map((t) => t.id);
+    const teamById = new Map(teams.map((t) => [t.id, t]));
+    const playersByTeam = new Map<string, PlayerRow[]>();
+    for (const p of players) {
+        if (!p.teamId) continue;
+        const list = playersByTeam.get(p.teamId) ?? [];
+        list.push(p);
+        playersByTeam.set(p.teamId, list);
+    }
+
+    const scoreByRound = new Map<string, RoundScoreRow[]>();
+    for (const s of scores) {
+        const list = scoreByRound.get(s.roundId) ?? [];
+        list.push(s);
+        scoreByRound.set(s.roundId, list);
+    }
+
+    const publicRounds: PublicRound[] = rounds
+        .slice()
+        .sort((a, b) => a.number - b.number)
+        .map((r) => ({
+            id: r.id,
+            number: r.number,
+            lockedAt: r.lockedAt,
+            playPhase: r.playPhase ?? null,
+            wildRank: r.wildRank ?? null,
+            rankClaims: parseRankClaimsJson(r.rankClaimsJson),
+            scores: (scoreByRound.get(r.id) ?? []).map((s) => mapRoundScoreRow(s, game.type)),
+        }));
+
+    const lockedRounds = publicRounds.filter((r) => r.lockedAt != null).sort((a, b) => a.number - b.number);
+    const cumulativeLocked = new Map<string, number>();
+    for (const tid of teamIds) cumulativeLocked.set(tid, 0);
+
+    const chartPoints: ChartPoint[] = [];
+    for (const r of lockedRounds) {
+        const point: ChartPoint = { round: r.number };
+        for (const tid of teamIds) {
+            const row = r.scores.find((s) => s.teamId === tid);
+            const t = row?.total ?? 0;
+            const prev = cumulativeLocked.get(tid) ?? 0;
+            const next = prev + t;
+            cumulativeLocked.set(tid, next);
+            point[tid] = next;
+        }
+        chartPoints.push(point);
+    }
+
+    const current = publicRounds.find((r) => r.number === game.currentRound && r.lockedAt == null);
+    const cumulativeDisplay = new Map<string, number>(cumulativeLocked);
+    if (current) {
+        for (const tid of teamIds) {
+            const row = current.scores.find((s) => s.teamId === tid);
+            const t = row?.total ?? 0;
+            cumulativeDisplay.set(tid, (cumulativeLocked.get(tid) ?? 0) + t);
+        }
+    }
+
+    const roundTotal = (roundNum: number, tid: string): number | null => {
+        const r = lockedRounds.find((x) => x.number === roundNum);
+        if (!r) return null;
+        const row = r.scores.find((s) => s.teamId === tid);
+        return row?.total ?? null;
+    };
+
+    const teamStandings: TeamStandingsRow[] = teams
+        .slice()
+        .sort((a, b) => a.sortOrder - b.sortOrder)
+        .map((t) => {
+            const members = playersByTeam.get(t.id) ?? [];
+            return {
+                teamId: t.id,
+                teamName: t.name,
+                playerNames: members.map((p) => p.displayName),
+                cumulative: cumulativeDisplay.get(t.id) ?? 0,
+                round1: roundTotal(1, t.id),
+                round2: roundTotal(2, t.id),
+                round3: roundTotal(3, t.id),
+            };
+        });
+
+    const winnerTeamIds =
+        game.status === "done" ? winnerTeamIdsHandAndFoot(teamIds, cumulativeDisplay) : [];
+
+    let currentRoundComplete = false;
+    if (current && teams.length > 0) {
+        if (current.playPhase === "playing") {
+            currentRoundComplete = false;
+        } else {
+            const submittedTeams = new Set(
+                current.scores.map((s) => s.teamId).filter((id): id is string => id != null),
+            );
+            currentRoundComplete = teams.every((t) => submittedTeams.has(t.id));
+        }
+    }
+
+    return {
+        code: game.code,
+        type: game.type,
+        status: game.status,
+        targetScore: game.targetScore,
+        roundWinBonus: game.roundWinBonus,
+        showPlayedCards,
+        currentRound: game.currentRound,
+        createdAt: game.createdAt,
+        youAreHost,
+        teams: teams
+            .slice()
+            .sort((a, b) => a.sortOrder - b.sortOrder)
+            .map((t) => ({ id: t.id, name: t.name, sortOrder: t.sortOrder })),
+        players: players.map((p) => ({
+            id: p.id,
+            displayName: p.displayName,
+            joinedAt: p.joinedAt,
+            teamId: p.teamId ?? null,
+        })),
+        rounds: publicRounds,
+        standings: [],
+        teamStandings,
+        projections: teamIds.map((tid) => ({ playerId: tid, estimatedRoundsRemaining: null })),
+        favoritePlayerId: null,
+        chart: { keys: teamIds, points: chartPoints },
+        currentRoundComplete,
+        winnerPlayerIds: [],
+        winnerTeamIds,
+        groupAwards: [],
     };
 }

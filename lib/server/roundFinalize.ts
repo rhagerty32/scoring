@@ -1,8 +1,9 @@
 import { asc, eq, inArray } from "drizzle-orm";
 import type { LibSQLDatabase } from "drizzle-orm/libsql";
 import type { GameRow, RoundRow } from "@/lib/db/schema";
-import { games, players, roundScores, rounds } from "@/lib/db/schema";
+import { games, players, roundScores, rounds, teams } from "@/lib/db/schema";
 import * as schema from "@/lib/db/schema";
+import { HAND_AND_FOOT_ROUNDS, maxCumulativeTeamsAfterLock, usesPlayPhase } from "@/lib/games/handAndFoot";
 import { randomId } from "@/lib/ids";
 
 type DB = LibSQLDatabase<typeof schema>;
@@ -36,7 +37,6 @@ export type FinalizeOpenRoundResult =
 
 /**
  * Locks the current open round, ends the game or creates the next round.
- * Call only when every player has a score row for this round; otherwise returns `incomplete`.
  */
 export async function finalizeOpenRoundInTransaction(
   tx: GameDbTransaction,
@@ -48,14 +48,30 @@ export async function finalizeOpenRoundInTransaction(
     return { ok: false, error: "already_locked", message: "Round already locked" };
   }
 
-  if (game.type === "2500" && openRound.playPhase !== "scoring") {
+  if (usesPlayPhase(game.type) && openRound.playPhase !== "scoring") {
     return { ok: false, error: "incomplete", message: "Round is still in play" };
   }
 
-  const playerRows = await tx.select().from(players).where(eq(players.gameId, game.id));
-  const submitted = await tx.select().from(roundScores).where(eq(roundScores.roundId, openRound.id));
-  if (submitted.length < playerRows.length) {
-    return { ok: false, error: "incomplete", message: "All players must submit scores first" };
+  const isHandAndFoot = game.type === "hand-and-foot";
+
+  if (isHandAndFoot) {
+    const teamRows = await tx.select().from(teams).where(eq(teams.gameId, game.id));
+    const submitted = await tx
+      .select()
+      .from(roundScores)
+      .where(eq(roundScores.roundId, openRound.id));
+    const submittedTeamIds = new Set(
+      submitted.map((s) => s.teamId).filter((id): id is string => id != null),
+    );
+    if (submittedTeamIds.size < teamRows.length) {
+      return { ok: false, error: "incomplete", message: "All teams must submit scores first" };
+    }
+  } else {
+    const playerRows = await tx.select().from(players).where(eq(players.gameId, game.id));
+    const submitted = await tx.select().from(roundScores).where(eq(roundScores.roundId, openRound.id));
+    if (submitted.length < playerRows.length) {
+      return { ok: false, error: "incomplete", message: "All players must submit scores first" };
+    }
   }
 
   const now = Date.now();
@@ -72,19 +88,40 @@ export async function finalizeOpenRoundInTransaction(
   const scoreRows =
     roundIds.length === 0 ? [] : await tx.select().from(roundScores).where(inArray(roundScores.roundId, roundIds));
 
-  const scoresByRoundId = new Map<string, Map<string, number>>();
-  for (const s of scoreRows) {
-    const m = scoresByRoundId.get(s.roundId) ?? new Map();
-    m.set(s.playerId, s.total);
-    scoresByRoundId.set(s.roundId, m);
-  }
+  let maxScore = 0;
 
-  const playerIds = playerRows.map((p) => p.id);
-  const maxScore = maxCumulativeAfterLock({ playerIds, lockedRounds: locked, scoresByRoundId });
+  if (isHandAndFoot) {
+    const teamRows = await tx.select().from(teams).where(eq(teams.gameId, game.id));
+    const teamIds = teamRows.map((t) => t.id);
+    const scoresByRoundId = new Map<string, Map<string, number>>();
+    for (const s of scoreRows) {
+      if (s.teamId == null) continue;
+      const m = scoresByRoundId.get(s.roundId) ?? new Map();
+      m.set(s.teamId, s.total);
+      scoresByRoundId.set(s.roundId, m);
+    }
+    maxScore = maxCumulativeTeamsAfterLock({ teamIds, lockedRounds: locked, scoresByRoundId });
 
-  if (maxScore >= game.targetScore) {
-    await tx.update(games).set({ status: "done" }).where(eq(games.id, game.id));
-    return { ok: true, status: "done", maxScore };
+    if (game.currentRound >= HAND_AND_FOOT_ROUNDS) {
+      await tx.update(games).set({ status: "done" }).where(eq(games.id, game.id));
+      return { ok: true, status: "done", maxScore };
+    }
+  } else {
+    const scoresByRoundId = new Map<string, Map<string, number>>();
+    for (const s of scoreRows) {
+      const m = scoresByRoundId.get(s.roundId) ?? new Map();
+      m.set(s.playerId, s.total);
+      scoresByRoundId.set(s.roundId, m);
+    }
+
+    const playerRows = await tx.select().from(players).where(eq(players.gameId, game.id));
+    const playerIds = playerRows.map((p) => p.id);
+    maxScore = maxCumulativeAfterLock({ playerIds, lockedRounds: locked, scoresByRoundId });
+
+    if (maxScore >= game.targetScore) {
+      await tx.update(games).set({ status: "done" }).where(eq(games.id, game.id));
+      return { ok: true, status: "done", maxScore };
+    }
   }
 
   const nextNum = game.currentRound + 1;
@@ -94,7 +131,7 @@ export async function finalizeOpenRoundInTransaction(
     gameId: game.id,
     number: nextNum,
     lockedAt: null,
-    ...(game.type === "2500"
+    ...(usesPlayPhase(game.type)
       ? { playPhase: "playing", wildRank: null, rankClaimsJson: "{}" }
       : { playPhase: null, wildRank: null, rankClaimsJson: null }),
   });

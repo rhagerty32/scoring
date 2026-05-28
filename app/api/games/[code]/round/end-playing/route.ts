@@ -19,7 +19,9 @@ export async function POST(req: Request, ctx: RouteCtx) {
   if (!game) return notFound("Game not found");
   if (game.hostToken !== hostToken) return unauthorized("Invalid host token");
   if (game.status !== "active") return badRequest("Game is not active");
-  if (game.type !== "2500") return badRequest("Not a 2500 game");
+  if (game.type !== "2500" && game.type !== "hand-and-foot") {
+    return badRequest("This game does not use play phases");
+  }
 
   const [round] = await db
     .select()

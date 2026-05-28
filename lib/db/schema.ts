@@ -37,9 +37,24 @@ export const games = sqliteTable(
     status: text("status").notNull(),
     currentRound: integer("current_round").notNull().default(0),
     hostToken: text("host_token").notNull(),
+    /** 2500: 1 = show meld tracker to all players, 0 = hidden. */
+    showPlayedCards: integer("show_played_cards").notNull().default(1),
     createdAt: integer("created_at").notNull(),
   },
   (t) => [uniqueIndex("games_code_idx").on(t.code)]
+);
+
+export const teams = sqliteTable(
+  "teams",
+  {
+    id: text("id").primaryKey(),
+    gameId: text("game_id")
+      .notNull()
+      .references(() => games.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    sortOrder: integer("sort_order").notNull(),
+  },
+  (t) => [index("teams_game_idx").on(t.gameId)]
 );
 
 export const players = sqliteTable(
@@ -55,11 +70,13 @@ export const players = sqliteTable(
     clientKey: text("client_key"),
     joinedAt: integer("joined_at").notNull(),
     userId: text("user_id").references(() => users.id, { onDelete: "set null" }),
+    teamId: text("team_id").references(() => teams.id, { onDelete: "set null" }),
   },
   (t) => [
     index("players_game_idx").on(t.gameId),
     uniqueIndex("players_game_client_key_idx").on(t.gameId, t.clientKey),
     index("players_user_idx").on(t.userId),
+    index("players_team_idx").on(t.teamId),
   ]
 );
 
@@ -72,7 +89,7 @@ export const rounds = sqliteTable(
       .references(() => games.id, { onDelete: "cascade" }),
     number: integer("number").notNull(),
     lockedAt: integer("locked_at"),
-    /** `playing` | `scoring` for game type 2500; NULL for legacy Nertz rounds. */
+    /** `playing` | `scoring` for 2500 / hand-and-foot; NULL for legacy Nertz rounds. */
     playPhase: text("play_phase"),
     wildRank: text("wild_rank"),
     /** JSON: { [rank]: playerId } — who marked each rank as played down. */
@@ -94,19 +111,25 @@ export const roundScores = sqliteTable(
     playerId: text("player_id")
       .notNull()
       .references(() => players.id, { onDelete: "cascade" }),
+    /** Hand and Foot: score belongs to this team; playerId is the submitter. */
+    teamId: text("team_id").references(() => teams.id, { onDelete: "cascade" }),
     score: integer("score").notNull(),
     penalty: integer("penalty").notNull(),
     bonus: integer("bonus").notNull(),
     total: integer("total").notNull(),
-    /** JSON: calculator tap counts for 2500 analytics (e.g. p100, m100). */
+    /** JSON: 2500 tap counts or Hand and Foot { books, cards, penalties }. */
     scoreMetaJson: text("score_meta_json"),
   },
-  (t) => [uniqueIndex("round_scores_round_player_idx").on(t.roundId, t.playerId)]
+  (t) => [
+    uniqueIndex("round_scores_round_player_idx").on(t.roundId, t.playerId),
+    uniqueIndex("round_scores_round_team_idx").on(t.roundId, t.teamId),
+  ]
 );
 
 export type UserRow = typeof users.$inferSelect;
 export type SessionRow = typeof sessions.$inferSelect;
 export type GameRow = typeof games.$inferSelect;
+export type TeamRow = typeof teams.$inferSelect;
 export type PlayerRow = typeof players.$inferSelect;
 export type RoundRow = typeof rounds.$inferSelect;
 export type RoundScoreRow = typeof roundScores.$inferSelect;

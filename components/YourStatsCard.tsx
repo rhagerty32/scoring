@@ -3,9 +3,48 @@
 import type { PublicGamePayload } from "@/lib/server/gameState";
 
 export function YourStatsCard({ game, playerId }: { game: PublicGamePayload; playerId: string }) {
-    const row = game.standings.find((s) => s.playerId === playerId);
+    const player = game.players.find((p) => p.id === playerId);
     const numLocked = game.rounds.filter((r) => r.lockedAt != null).length;
-    const name = game.players.find((p) => p.id === playerId)?.displayName ?? "You";
+
+    if (game.type === "hand-and-foot") {
+        const teamId = player?.teamId;
+        const row = teamId ? game.teamStandings.find((t) => t.teamId === teamId) : undefined;
+        if (!row) return null;
+
+        return (
+            <div className="rounded-2xl border border-white/10 bg-[var(--game-surface)] p-4 shadow-[var(--game-shadow)] sm:rounded-[var(--game-radius)] sm:p-5">
+                <h3 className="text-xs font-semibold uppercase tracking-[0.15em] text-[var(--game-muted)] sm:text-sm">
+                    Your team
+                </h3>
+                <p className="mt-2 truncate text-lg font-semibold text-[var(--game-text)] sm:text-base">{row.teamName}</p>
+                <p className="mt-1 text-xs text-[var(--game-muted)]">{row.playerNames.join(", ")}</p>
+
+                {numLocked === 0 ? (
+                    <p className="mt-3 text-pretty text-sm leading-relaxed text-[var(--game-muted)] sm:text-xs">
+                        Round scores appear after the first round is locked.
+                    </p>
+                ) : (
+                    <dl className="mt-4 grid grid-cols-2 gap-3 text-sm sm:text-xs">
+                        <div>
+                            <dt className="text-[var(--game-muted)]">Total</dt>
+                            <dd className="mt-0.5 font-mono text-lg font-semibold tabular-nums text-[var(--game-text)]">
+                                {row.cumulative}
+                            </dd>
+                        </div>
+                        <div>
+                            <dt className="text-[var(--game-muted)]">R1 / R2 / R3</dt>
+                            <dd className="mt-0.5 font-mono tabular-nums text-[var(--game-text)]">
+                                {row.round1 ?? "—"} / {row.round2 ?? "—"} / {row.round3 ?? "—"}
+                            </dd>
+                        </div>
+                    </dl>
+                )}
+            </div>
+        );
+    }
+
+    const row = game.standings.find((s) => s.playerId === playerId);
+    const name = player?.displayName ?? "You";
 
     if (!row) return null;
 
@@ -54,7 +93,9 @@ export function YourStatsCard({ game, playerId }: { game: PublicGamePayload; pla
                         ) : (
                             <div>
                                 <dt className="text-[var(--game-muted)]">Avg penalty / locked rnd</dt>
-                                <dd className="mt-0.5 font-mono tabular-nums text-[var(--game-text)]">{row.averagePenaltyPerLockedRound.toFixed(2)}</dd>
+                                <dd className="mt-0.5 font-mono tabular-nums text-[var(--game-text)]">
+                                    {row.averagePenaltyPerLockedRound.toFixed(2)}
+                                </dd>
                             </div>
                         )}
                     </dl>
@@ -66,7 +107,7 @@ export function YourStatsCard({ game, playerId }: { game: PublicGamePayload; pla
                             </span>
                         </div>
                         <div
-                            className="mt-2 h-2 overflow-hidden rounded-full bg-black/30"
+                            className="h-2 overflow-hidden rounded-full bg-black/30"
                             role="progressbar"
                             aria-valuenow={Math.round(progress * 100)}
                             aria-valuemin={0}

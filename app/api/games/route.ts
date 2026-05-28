@@ -17,6 +17,9 @@ const createBody = z.discriminatedUnion("type", [
     type: z.literal("2500"),
     targetScore: z.coerce.number().int().min(1).max(100_000),
   }),
+  z.object({
+    type: z.literal("hand-and-foot"),
+  }),
 ]);
 
 export async function POST(req: Request) {
@@ -40,12 +43,17 @@ export async function POST(req: Request) {
     const id = randomId();
     const code = randomRoomCode(6);
     try {
+      const targetScore =
+        parsed.data.type === "hand-and-foot" ? 0 : parsed.data.targetScore;
+      const roundWinBonus =
+        parsed.data.type === "nertz" ? parsed.data.roundWinBonus : 0;
+
       await db.insert(games).values({
         id,
         code,
         type: parsed.data.type,
-        targetScore: parsed.data.targetScore,
-        roundWinBonus: parsed.data.type === "2500" ? 0 : parsed.data.roundWinBonus,
+        targetScore,
+        roundWinBonus,
         status: "lobby",
         currentRound: 0,
         hostToken,

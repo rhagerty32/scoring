@@ -1,12 +1,18 @@
 import { asc, eq, inArray } from "drizzle-orm";
 import { getDb } from "@/lib/db";
-import { games, players, roundScores, rounds } from "@/lib/db/schema";
+import { games, players, roundScores, rounds, teams } from "@/lib/db/schema";
 
 export async function loadGameBundleByCode(code: string) {
   const db = getDb();
   const normalized = code.trim().toUpperCase();
   const [game] = await db.select().from(games).where(eq(games.code, normalized)).limit(1);
   if (!game) return null;
+
+  const teamRows = await db
+    .select()
+    .from(teams)
+    .where(eq(teams.gameId, game.id))
+    .orderBy(asc(teams.sortOrder));
 
   const playerRows = await db
     .select()
@@ -25,5 +31,5 @@ export async function loadGameBundleByCode(code: string) {
       ? []
       : await db.select().from(roundScores).where(inArray(roundScores.roundId, roundIds));
 
-  return { game, players: playerRows, rounds: roundRows, scores: scoreRows };
+  return { game, teams: teamRows, players: playerRows, rounds: roundRows, scores: scoreRows };
 }

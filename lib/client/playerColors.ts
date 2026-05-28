@@ -10,3 +10,15 @@ export function playerColorMap(playerIds: string[]): Map<string, string> {
   playerIds.forEach((id, i) => m.set(id, playerColorByIndex(i)));
   return m;
 }
+
+export type StandingsLike = { playerId: string; cumulative: number };
+
+/** Player ids highest cumulative first (current standings order). */
+export function playerIdsByStandings(standings: StandingsLike[]): string[] {
+  return [...standings].sort((a, b) => b.cumulative - a.cumulative).map((s) => s.playerId);
+}
+
+/** Colors keyed by player id; palette index follows current standings rank. */
+export function playerColorMapFromStandings(standings: StandingsLike[]): Map<string, string> {
+  return playerColorMap(playerIdsByStandings(standings));
+}

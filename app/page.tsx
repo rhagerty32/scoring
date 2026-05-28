@@ -9,7 +9,11 @@ import { GAME_REGISTRY, type GameTypeId } from "@/lib/games/registry";
 import { writeHostToken } from "@/lib/client/storage";
 
 function createWizardSteps(gameType: GameTypeId): number {
-  return gameType === "2500" ? 3 : 4;
+  return gameType === "2500" || gameType === "hand-and-foot" ? 3 : 4;
+}
+
+function usesShortWizard(gameType: GameTypeId): boolean {
+  return gameType === "2500" || gameType === "hand-and-foot";
 }
 
 const field =
@@ -37,6 +41,9 @@ export default function Home() {
     if (gameType === "2500") {
       setTargetScore("2500");
       setRoundWinBonus("0");
+    } else if (gameType === "hand-and-foot") {
+      setTargetScore("0");
+      setRoundWinBonus("0");
     } else {
       setTargetScore("100");
       setRoundWinBonus("10");
@@ -51,8 +58,8 @@ export default function Home() {
 
   useFocusWhen([step], selectRef, step === 0);
   useFocusWhen([step], targetRef, step === 1);
-  useFocusWhen([step, gameType], bonusRef, step === 2 && gameType !== "2500");
-  useFocusWhen([step, gameType], createRef, step === (gameType === "2500" ? 2 : 3));
+  useFocusWhen([step, gameType], bonusRef, step === 2 && !usesShortWizard(gameType));
+  useFocusWhen([step, gameType], createRef, step === (usesShortWizard(gameType) ? 2 : 3));
 
   useEffect(() => {
     const onKey = (e: globalThis.KeyboardEvent) => {
@@ -89,7 +96,9 @@ export default function Home() {
       const body =
         gameType === "2500"
           ? { type: "2500" as const, targetScore: Number(targetScore) }
-          : { type: "nertz" as const, targetScore: Number(targetScore), roundWinBonus: Number(roundWinBonus) };
+          : gameType === "hand-and-foot"
+            ? { type: "hand-and-foot" as const }
+            : { type: "nertz" as const, targetScore: Number(targetScore), roundWinBonus: Number(roundWinBonus) };
       const res = await fetch("/api/games", {
         method: "POST",
         credentials: "include",
@@ -193,7 +202,17 @@ export default function Home() {
                 {nav}
               </div>
             ) : null}
-            {step === 1 ? (
+            {step === 1 && gameType === "hand-and-foot" ? (
+              <div className="flex flex-col justify-start gap-4 sm:flex-1 sm:justify-center">
+                <p className="text-sm font-medium text-[var(--game-muted)] sm:text-xs">About this game</p>
+                <p className="text-pretty text-sm leading-relaxed text-[var(--game-muted)]">
+                  Three rounds of team play. In the lobby, drag players into teams. The host ends each round of play;
+                  then each team enters books, cards, and penalty points. Highest total after round 3 wins.
+                </p>
+                {nav}
+              </div>
+            ) : null}
+            {step === 1 && gameType !== "hand-and-foot" ? (
               <div className="flex flex-col justify-start sm:flex-1 sm:justify-center">
                 <label className="text-sm font-medium text-[var(--game-muted)] sm:text-xs">
                   Winning score (play to)
@@ -209,7 +228,7 @@ export default function Home() {
                 {nav}
               </div>
             ) : null}
-            {step === 2 && gameType !== "2500" ? (
+            {step === 2 && gameType !== "2500" && gameType !== "hand-and-foot" ? (
               <div className="flex flex-col justify-start sm:flex-1 sm:justify-center">
                 <label className="text-sm font-medium text-[var(--game-muted)] sm:text-xs">
                   Round win bonus
@@ -225,7 +244,7 @@ export default function Home() {
                 {nav}
               </div>
             ) : null}
-            {step === 2 && gameType === "2500" ? (
+            {step === 2 && usesShortWizard(gameType) ? (
               <div className="flex flex-col justify-start gap-4 sm:flex-1 sm:justify-center">
                 <p className="text-sm font-medium text-[var(--game-muted)] sm:text-xs">Review</p>
                 <ul className="space-y-2 rounded-2xl border border-white/10 bg-black/15 px-4 py-4 text-base text-[var(--game-text)] sm:text-sm">
@@ -233,15 +252,23 @@ export default function Home() {
                     <span className="text-[var(--game-muted)]">Game</span>
                     <span className="font-medium">{GAME_REGISTRY.find((g) => g.id === gameType)?.label}</span>
                   </li>
-                  <li className="flex justify-between gap-4">
-                    <span className="text-[var(--game-muted)]">Play to</span>
-                    <span className="font-mono font-medium">{targetScore}</span>
-                  </li>
+                  {gameType === "2500" ? (
+                    <li className="flex justify-between gap-4">
+                      <span className="text-[var(--game-muted)]">Play to</span>
+                      <span className="font-mono font-medium">{targetScore}</span>
+                    </li>
+                  ) : (
+                    <li className="flex justify-between gap-4">
+                      <span className="text-[var(--game-muted)]">Rounds</span>
+                      <span className="font-medium">3 (highest total wins)</span>
+                    </li>
+                  )}
                 </ul>
                 {error ? <p className="text-base text-[var(--game-warn)] sm:text-sm">{error}</p> : null}
                 <p className="text-pretty text-sm leading-relaxed text-[var(--game-muted)]">
-                  The host ends each round of play, then everyone logs their score on their own device. When all scores
-                  are in, the next round starts.
+                  {gameType === "hand-and-foot"
+                    ? "Assign teams in the lobby, then play three rounds. The host ends each round; teams enter scores on their phones."
+                    : "The host ends each round of play, then everyone logs their score on their own device. When all scores are in, the next round starts."}
                 </p>
                 {nav}
               </div>

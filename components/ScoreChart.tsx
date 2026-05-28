@@ -12,14 +12,20 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
+import { playerColorByIndex, playerColorMapFromStandings, playerIdsByStandings } from "@/lib/client/playerColors";
 import type { PublicGamePayload } from "@/lib/server/gameState";
 
-const PALETTE = ["#f97316", "#5eead4", "#fbbf24", "#fb7185", "#4ade80", "#38bdf8", "#fcd34d", "#f472b6"];
-
 export function ScoreChart({ game }: { game: PublicGamePayload }) {
-  const { points, keys } = game.chart;
+  const { points } = game.chart;
+  const keys = useMemo(() => {
+    const byStandings = playerIdsByStandings(game.standings);
+    const known = new Set(byStandings);
+    const trailing = game.chart.keys.filter((id) => !known.has(id));
+    return [...byStandings, ...trailing];
+  }, [game.standings, game.chart.keys]);
+  const colors = useMemo(() => playerColorMapFromStandings(game.standings), [game.standings]);
   const yMax = useMemo(() => {
-    let max = game.targetScore;
+    let max = game.type === "hand-and-foot" ? 0 : game.targetScore;
     for (const pt of points) {
       for (const k of keys) {
         const v = pt[k];
@@ -37,7 +43,16 @@ export function ScoreChart({ game }: { game: PublicGamePayload }) {
     );
   }
 
-  const nameById = new Map(game.players.map((p) => [p.id, p.displayName]));
+  const nameById =
+    game.type === "hand-and-foot"
+      ? new Map(game.teams.map((t) => [t.id, t.name]))
+      : new Map(game.players.map((p) => [p.id, p.displayName]));
+  const legendPayload = keys.map((id) => ({
+    value: nameById.get(id) ?? id,
+    type: "line" as const,
+    color: colors.get(id) ?? playerColorByIndex(0),
+    id,
+  }));
 
   return (
     <div className="h-[min(52svh,420px)] w-full rounded-2xl border border-white/10 bg-[var(--game-surface)] p-2 shadow-[var(--game-shadow)] sm:h-80 sm:p-4">
@@ -52,17 +67,19 @@ export function ScoreChart({ game }: { game: PublicGamePayload }) {
             domain={[0, yMax]}
             allowDataOverflow={false}
           />
-          <ReferenceLine
-            y={game.targetScore}
-            stroke="rgba(255,255,255,0.35)"
-            strokeDasharray="5 5"
-            label={{
-              value: "Goal",
-              position: "right",
-              fill: "var(--game-muted)",
-              fontSize: 10,
-            }}
-          />
+          {game.type !== "hand-and-foot" && game.targetScore > 0 ? (
+            <ReferenceLine
+              y={game.targetScore}
+              stroke="rgba(255,255,255,0.35)"
+              strokeDasharray="5 5"
+              label={{
+                value: "Goal",
+                position: "right",
+                fill: "var(--game-muted)",
+                fontSize: 10,
+              }}
+            />
+          ) : null}
           <Tooltip
             contentStyle={{
               background: "var(--game-surface-2)",
@@ -75,18 +92,19 @@ export function ScoreChart({ game }: { game: PublicGamePayload }) {
             labelFormatter={(v) => `Round ${v}`}
             formatter={(value, name) => [value, nameById.get(String(name)) ?? name]}
           />
+          {/* recharts Legend `payload` prop is supported at runtime; types omit it in this version */}
           <Legend
+            {...({ payload: legendPayload } as object)}
             verticalAlign="bottom"
             height={44}
             wrapperStyle={{ fontSize: "11px", paddingTop: "6px" }}
-            formatter={(value) => nameById.get(String(value)) ?? String(value)}
           />
-          {keys.map((k, i) => (
+          {keys.map((k) => (
             <Line
               key={k}
               type="monotone"
               dataKey={k}
-              stroke={PALETTE[i % PALETTE.length]}
+              stroke={colors.get(k) ?? playerColorByIndex(0)}
               strokeWidth={2.5}
               dot={false}
               isAnimationActive={false}

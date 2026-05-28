@@ -3,6 +3,7 @@ import { z } from "zod";
 import { getDb } from "@/lib/db";
 import { games, players, roundScores, rounds } from "@/lib/db/schema";
 import { normalizeScoreTapMeta, parse2500ScorePayload } from "@/lib/games/game2500";
+import { parseHandAndFootScorePayload } from "@/lib/games/handAndFoot";
 import { parseScorePayload } from "@/lib/games/nertz";
 import { randomId } from "@/lib/ids";
 import { badRequest, json, notFound, unauthorized } from "@/lib/server/httpJson";
@@ -21,12 +22,20 @@ const scoreMetaSchema = z
   })
   .optional();
 
-const scoreBody = z.object({
+const nertzScoreBody = z.object({
   playerId: z.string().min(1),
   score: z.coerce.number().int(),
   penalty: z.coerce.number().int(),
   bonus: z.coerce.number().int(),
   scoreMeta: scoreMetaSchema,
+});
+
+const handFootScoreBody = z.object({
+  playerId: z.string().min(1),
+  teamId: z.string().min(1),
+  books: z.coerce.number().int(),
+  cards: z.coerce.number().int(),
+  penalties: z.coerce.number().int(),
 });
 
 type RouteCtx = { params: Promise<{ code: string }> };
@@ -54,24 +63,27 @@ export async function POST(req: Request, ctx: RouteCtx) {
   } catch {
     return badRequest("Invalid JSON");
   }
-  const parsed = scoreBody.safeParse(body);
-  if (!parsed.success) return badRequest("Invalid body");
 
   const db = getDb();
   const normalized = code.trim().toUpperCase();
+
+  const [gamePreview] = await db.select().from(games).where(eq(games.code, normalized)).limit(1);
+  if (!gamePreview) return notFound("Game not found");
+
+  const isHandAndFoot = gamePreview.type === "hand-and-foot";
+  const parsedNertz = !isHandAndFoot ? nertzScoreBody.safeParse(body) : null;
+  const parsedHandFoot = isHandAndFoot ? handFootScoreBody.safeParse(body) : null;
+
+  if (isHandAndFoot) {
+    if (!parsedHandFoot?.success) return badRequest("Invalid body");
+  } else if (!parsedNertz?.success) {
+    return badRequest("Invalid body");
+  }
 
   const result: ScoreSaveResult = await db.transaction(async (tx) => {
     const [game] = await tx.select().from(games).where(eq(games.code, normalized)).limit(1);
     if (!game) return { error: "Game not found", status: 404 };
     if (game.status !== "active") return { error: "Game is not active", status: 400 };
-
-    const [player] = await tx
-      .select()
-      .from(players)
-      .where(and(eq(players.id, parsed.data.playerId), eq(players.gameId, game.id)))
-      .limit(1);
-    if (!player) return { error: "Player not in this game", status: 404 };
-    if (player.playerToken !== playerToken) return { error: "Invalid player token", status: 401 };
 
     const [round] = await tx
       .select()
@@ -83,48 +95,88 @@ export async function POST(req: Request, ctx: RouteCtx) {
 
     let totals: { score: number; penalty: number; bonus: number; total: number };
     let scoreMetaJson: string | null = null;
+    let player: (typeof players.$inferSelect) | undefined;
+    let teamId: string | null = null;
 
-    if (game.type === "2500") {
+    if (game.type === "hand-and-foot" && parsedHandFoot?.success) {
+      const data = parsedHandFoot.data;
       if (round.playPhase !== "scoring") {
         return { error: "The host has not ended this round yet", status: 400 };
       }
-      totals = parse2500ScorePayload(parsed.data);
-      scoreMetaJson =
-        parsed.data.scoreMeta != null ? JSON.stringify(normalizeScoreTapMeta(parsed.data.scoreMeta)) : null;
-    } else {
-      const allowedBonus = new Set([0, game.roundWinBonus]);
-      if (!allowedBonus.has(parsed.data.bonus)) {
-        return { error: "Bonus must be 0 or the round win bonus", status: 400 };
-      }
-      totals = parseScorePayload(parsed.data);
+      [player] = await tx
+        .select()
+        .from(players)
+        .where(and(eq(players.id, data.playerId), eq(players.gameId, game.id)))
+        .limit(1);
+      if (!player) return { error: "Player not in this game", status: 404 };
+      if (player.playerToken !== playerToken) return { error: "Invalid player token", status: 401 };
+      if (player.teamId !== data.teamId) return { error: "You can only score for your own team", status: 403 };
 
-      if (totals.bonus === game.roundWinBonus && game.roundWinBonus > 0) {
-        const peerRows = await tx.select().from(roundScores).where(eq(roundScores.roundId, round.id));
-        const takenByOther = peerRows.some(
-          (row) => row.playerId !== player.id && row.bonus === game.roundWinBonus,
-        );
-        if (takenByOther) {
-          return { error: "Another player already claimed the round win", status: 400 };
+      teamId = data.teamId;
+      const parsed = parseHandAndFootScorePayload({
+        books: data.books,
+        cards: data.cards,
+        penalties: data.penalties,
+      });
+      totals = parsed;
+      scoreMetaJson = JSON.stringify(parsed.meta);
+    } else if (parsedNertz?.success) {
+      const data = parsedNertz.data;
+      [player] = await tx
+        .select()
+        .from(players)
+        .where(and(eq(players.id, data.playerId), eq(players.gameId, game.id)))
+        .limit(1);
+      if (!player) return { error: "Player not in this game", status: 404 };
+      if (player.playerToken !== playerToken) return { error: "Invalid player token", status: 401 };
+
+      if (game.type === "2500") {
+        if (round.playPhase !== "scoring") {
+          return { error: "The host has not ended this round yet", status: 400 };
+        }
+        totals = parse2500ScorePayload(data);
+        scoreMetaJson =
+          data.scoreMeta != null ? JSON.stringify(normalizeScoreTapMeta(data.scoreMeta)) : null;
+      } else {
+        const allowedBonus = new Set([0, game.roundWinBonus]);
+        if (!allowedBonus.has(data.bonus)) {
+          return { error: "Bonus must be 0 or the round win bonus", status: 400 };
+        }
+        totals = parseScorePayload(data);
+
+        if (totals.bonus === game.roundWinBonus && game.roundWinBonus > 0) {
+          const peerRows = await tx.select().from(roundScores).where(eq(roundScores.roundId, round.id));
+          const takenByOther = peerRows.some(
+            (row) => row.playerId !== player!.id && row.bonus === game.roundWinBonus,
+          );
+          if (takenByOther) {
+            return { error: "Another player already claimed the round win", status: 400 };
+          }
         }
       }
+    } else {
+      return { error: "Invalid body", status: 400 };
     }
 
-    const [existing] = await tx
-      .select()
-      .from(roundScores)
-      .where(and(eq(roundScores.roundId, round.id), eq(roundScores.playerId, player.id)))
-      .limit(1);
+    const existingQuery =
+      game.type === "hand-and-foot" && teamId
+        ? and(eq(roundScores.roundId, round.id), eq(roundScores.teamId, teamId))
+        : and(eq(roundScores.roundId, round.id), eq(roundScores.playerId, player!.id));
+
+    const [existing] = await tx.select().from(roundScores).where(existingQuery).limit(1);
 
     let scoreRowId: string;
     if (existing) {
       await tx
         .update(roundScores)
         .set({
+          playerId: player!.id,
           score: totals.score,
           penalty: totals.penalty,
           bonus: totals.bonus,
           total: totals.total,
-          scoreMetaJson: game.type === "2500" ? scoreMetaJson : null,
+          scoreMetaJson:
+            game.type === "2500" || game.type === "hand-and-foot" ? scoreMetaJson : null,
         })
         .where(eq(roundScores.id, existing.id));
       scoreRowId = existing.id;
@@ -133,12 +185,14 @@ export async function POST(req: Request, ctx: RouteCtx) {
       await tx.insert(roundScores).values({
         id: scoreRowId,
         roundId: round.id,
-        playerId: player.id,
+        playerId: player!.id,
+        teamId: game.type === "hand-and-foot" ? teamId : null,
         score: totals.score,
         penalty: totals.penalty,
         bonus: totals.bonus,
         total: totals.total,
-        scoreMetaJson: game.type === "2500" ? scoreMetaJson : null,
+        scoreMetaJson:
+          game.type === "2500" || game.type === "hand-and-foot" ? scoreMetaJson : null,
       });
     }
 
@@ -171,6 +225,7 @@ export async function POST(req: Request, ctx: RouteCtx) {
   if ("error" in result) {
     if (result.status === 404) return notFound(result.error);
     if (result.status === 401) return unauthorized(result.error);
+    if (result.status === 403) return json({ error: result.error }, { status: 403 });
     return badRequest(result.error);
   }
 

@@ -52,6 +52,10 @@ export async function PATCH(req: Request, ctx: RouteCtx) {
   if (!round || round.lockedAt != null) return badRequest("No open round");
   if (round.playPhase !== "playing") return badRequest("Rank and wild edits are frozen during scoring");
 
+  if (parsed.data.action === "rank" && game.showPlayedCards === 0) {
+    return badRequest("Meld tracker is hidden for this game");
+  }
+
   if (parsed.data.action === "wild") {
     const wr = parsed.data.wildRank;
     const normalizedWild = wr === "" ? null : wr;

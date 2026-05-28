@@ -1,4 +1,4 @@
-export type GameTypeId = "nertz" | "swoop" | "2500";
+export type GameTypeId = "nertz" | "swoop" | "2500" | "hand-and-foot";
 
 export type GameDefinition = {
   id: GameTypeId;
@@ -52,6 +52,27 @@ export const GAME_REGISTRY: GameDefinition[] = [
         "--game-muted": "#8fa39a",
         "--game-radius": "12px",
         "--game-shadow": "0 16px 40px rgba(0, 0, 0, 0.4)",
+      },
+    },
+  },
+  {
+    id: "hand-and-foot",
+    label: "Hand and Foot",
+    description: "Three rounds of team play. Drag players into teams, then score books, cards, and penalties each round.",
+    enabled: true,
+    theme: {
+      dataAttr: "hand-and-foot",
+      cssVars: {
+        "--game-bg": "#0c1410",
+        "--game-surface": "#141f1a",
+        "--game-surface-2": "#1a2a22",
+        "--game-accent": "#34d399",
+        "--game-accent-2": "#a3e635",
+        "--game-warn": "#fbbf24",
+        "--game-text": "#ecfdf5",
+        "--game-muted": "#86a89a",
+        "--game-radius": "14px",
+        "--game-shadow": "0 18px 50px rgba(0, 0, 0, 0.45)",
       },
     },
   },

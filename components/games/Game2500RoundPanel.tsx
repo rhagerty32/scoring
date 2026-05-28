@@ -3,7 +3,7 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useMemo, useState, useCallback } from "react";
 import { applyRankToggle, RANKS_2500, type ScoreTapMeta } from "@/lib/games/game2500";
-import { playerColorMap } from "@/lib/client/playerColors";
+import { playerColorMapFromStandings } from "@/lib/client/playerColors";
 import { readHostToken } from "@/lib/client/storage";
 import type { PublicGamePayload, PublicRound, PublicRoundScore } from "@/lib/server/gameState";
 
@@ -60,7 +60,8 @@ export function Game2500RoundPanel({
 
     const current = game.rounds.find((r) => r.number === game.currentRound && r.lockedAt == null);
     const phase = current?.playPhase ?? "scoring";
-    const colors = useMemo(() => playerColorMap(game.players.map((p) => p.id)), [game.players]);
+    const showPlayedCards = game.showPlayedCards;
+    const colors = useMemo(() => playerColorMapFromStandings(game.standings), [game.standings]);
 
     const [pendingPlayKeys, setPendingPlayKeys] = useState(() => new Set<string>());
 
@@ -196,13 +197,15 @@ export function Game2500RoundPanel({
                         wildButtonPending={wildButtonPending}
                         onPick={(rank) => playStateMutation.mutate({ kind: "wild", wildRank: rank })}
                     />
-                    <RankTrackerPlaying
-                        rankClaims={current.rankClaims}
-                        colors={colors}
-                        youId={stored.playerId}
-                        rankButtonPending={rankButtonPending}
-                        onToggle={(rank, turnOn) => playStateMutation.mutate({ kind: "rank", rank, turnOn })}
-                    />
+                    {showPlayedCards ? (
+                        <RankTrackerPlaying
+                            rankClaims={current.rankClaims}
+                            colors={colors}
+                            youId={stored.playerId}
+                            rankButtonPending={rankButtonPending}
+                            onToggle={(rank, turnOn) => playStateMutation.mutate({ kind: "rank", rank, turnOn })}
+                        />
+                    ) : null}
                     {game.youAreHost ? (
                         <button
                             type="button"
@@ -220,7 +223,9 @@ export function Game2500RoundPanel({
 
             {phase === "scoring" ? (
                 <>
-                    <RankTrackerFrozen rankClaims={current.rankClaims} colors={colors} />
+                    {showPlayedCards ? (
+                        <RankTrackerFrozen rankClaims={current.rankClaims} colors={colors} />
+                    ) : null}
                     <Game2500ScoringForm
                         key={`${current.id}-${stored.playerId}`}
                         code={code}

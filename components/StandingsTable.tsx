@@ -1,13 +1,93 @@
 "use client";
 
+import { playerColorByIndex } from "@/lib/client/playerColors";
 import type { PublicGamePayload } from "@/lib/server/gameState";
 
-const PALETTE = ["#f97316", "#5eead4", "#fbbf24", "#fb7185", "#4ade80", "#38bdf8", "#fcd34d", "#f472b6"];
-
 export function StandingsTable({ game }: { game: PublicGamePayload }) {
+    const isHandAndFoot = game.type === "hand-and-foot";
+    const is2500 = game.type === "2500";
+
+    if (isHandAndFoot) {
+        const rows = [...game.teamStandings].sort((a, b) => b.cumulative - a.cumulative);
+        const isWinner = (teamId: string) => game.winnerTeamIds.includes(teamId);
+
+        return (
+            <>
+                <ul className="space-y-3 md:hidden">
+                    {rows.map((r, idx) => (
+                        <li
+                            key={r.teamId}
+                            className="rounded-2xl border border-white/10 bg-[var(--game-surface)] p-4 shadow-[var(--game-shadow)]"
+                        >
+                            <div className="flex items-start justify-between gap-3">
+                                <div className="min-w-0">
+                                    <p className="font-medium text-[var(--game-text)]">
+                                        {r.teamName}
+                                        {isWinner(r.teamId) ? (
+                                            <span className="ml-2 text-xs font-medium text-[var(--game-accent)]">Winner</span>
+                                        ) : null}
+                                    </p>
+                                    <p className="mt-1 truncate text-xs text-[var(--game-muted)]">{r.playerNames.join(", ")}</p>
+                                </div>
+                                <p className="shrink-0 font-mono text-2xl font-semibold tabular-nums">{r.cumulative}</p>
+                            </div>
+                            <dl className="mt-4 grid grid-cols-3 gap-2 border-t border-white/10 pt-4 text-sm">
+                                <div>
+                                    <dt className="text-xs text-[var(--game-muted)]">R1</dt>
+                                    <dd className="mt-0.5 font-mono tabular-nums">{r.round1 ?? "—"}</dd>
+                                </div>
+                                <div>
+                                    <dt className="text-xs text-[var(--game-muted)]">R2</dt>
+                                    <dd className="mt-0.5 font-mono tabular-nums">{r.round2 ?? "—"}</dd>
+                                </div>
+                                <div>
+                                    <dt className="text-xs text-[var(--game-muted)]">R3</dt>
+                                    <dd className="mt-0.5 font-mono tabular-nums">{r.round3 ?? "—"}</dd>
+                                </div>
+                            </dl>
+                        </li>
+                    ))}
+                </ul>
+                <div className="hidden overflow-x-auto rounded-2xl border border-white/10 bg-[var(--game-surface)] shadow-[var(--game-shadow)] md:block">
+                    <table className="w-full min-w-[640px] text-left text-sm">
+                        <thead className="text-[var(--game-muted)]">
+                            <tr className="border-b border-white/10">
+                                <th className="px-4 py-3 font-medium">#</th>
+                                <th className="px-4 py-3 font-medium">Team</th>
+                                <th className="px-4 py-3 text-right font-medium">R1</th>
+                                <th className="px-4 py-3 text-right font-medium">R2</th>
+                                <th className="px-4 py-3 text-right font-medium">R3</th>
+                                <th className="px-4 py-3 text-right font-medium">Total</th>
+                            </tr>
+                        </thead>
+                        <tbody className="text-[var(--game-text)]">
+                            {rows.map((r, idx) => (
+                                <tr key={r.teamId} className="border-b border-white/5 last:border-0">
+                                    <td className="px-4 py-3 font-mono text-[var(--game-muted)]">{idx + 1}</td>
+                                    <td className="px-4 py-3">
+                                        <span className="font-medium">{r.teamName}</span>
+                                        {isWinner(r.teamId) ? (
+                                            <span className="ml-2 rounded-full bg-white/10 px-2 py-0.5 text-xs text-[var(--game-accent)]">
+                                                Winner
+                                            </span>
+                                        ) : null}
+                                        <p className="mt-0.5 text-xs text-[var(--game-muted)]">{r.playerNames.join(", ")}</p>
+                                    </td>
+                                    <td className="px-4 py-3 text-right font-mono tabular-nums">{r.round1 ?? "—"}</td>
+                                    <td className="px-4 py-3 text-right font-mono tabular-nums">{r.round2 ?? "—"}</td>
+                                    <td className="px-4 py-3 text-right font-mono tabular-nums">{r.round3 ?? "—"}</td>
+                                    <td className="px-4 py-3 text-right font-mono tabular-nums font-semibold">{r.cumulative}</td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                </div>
+            </>
+        );
+    }
+
     const favoritePlayerId = game.favoritePlayerId;
     const rows = [...game.standings].sort((a, b) => b.cumulative - a.cumulative);
-    const is2500 = game.type === "2500";
 
     return (
         <>
@@ -18,7 +98,7 @@ export function StandingsTable({ game }: { game: PublicGamePayload }) {
                     const pace =
                         proj?.estimatedRoundsRemaining == null ? "—" : `~${proj.estimatedRoundsRemaining} rounds to goal`;
                     const isFav = favoritePlayerId === r.playerId;
-                    const color = PALETTE[idx % PALETTE.length]!;
+                    const color = playerColorByIndex(idx);
                     return (
                         <li
                             key={r.playerId}
@@ -121,7 +201,7 @@ export function StandingsTable({ game }: { game: PublicGamePayload }) {
                                     ? "—"
                                     : `${proj.estimatedRoundsRemaining} rounds est.`;
                             const isFav = favoritePlayerId === r.playerId;
-                            const color = PALETTE[idx % PALETTE.length]!;
+                            const color = playerColorByIndex(idx);
                             return (
                                 <tr key={r.playerId} className="border-b border-white/5 last:border-0">
                                     <td className="px-4 py-3 font-mono text-[var(--game-muted)]">{idx + 1}</td>
