@@ -20,7 +20,7 @@ const field =
   "min-h-12 w-full rounded-2xl border border-white/15 bg-black/25 px-4 text-base text-[var(--game-text)] outline-none transition focus:border-[var(--game-accent)] focus:ring-2 focus:ring-[var(--game-accent)]/30";
 
 const btnPrimary =
-  "flex min-h-12 w-full touch-manipulation items-center justify-center rounded-2xl bg-[var(--game-accent)] px-4 text-base font-semibold text-black active:opacity-90 disabled:pointer-events-none disabled:opacity-45";
+  "flex min-h-12 w-full touch-manipulation items-center justify-center rounded-2xl bg-[var(--game-accent)] px-4 text-base font-semibold text-[var(--game-on-accent)] active:opacity-90 disabled:pointer-events-none disabled:opacity-45";
 
 const btnGhost =
   "flex min-h-12 w-full touch-manipulation items-center justify-center rounded-2xl border border-white/20 bg-white/5 px-4 text-base font-medium text-[var(--game-text)] active:bg-white/10 disabled:pointer-events-none disabled:opacity-45";
@@ -30,6 +30,7 @@ export default function Home() {
   const [gameType, setGameType] = useState<GameTypeId>("nertz");
   const [targetScore, setTargetScore] = useState("100");
   const [roundWinBonus, setRoundWinBonus] = useState("10");
+  const [showPlayedCards, setShowPlayedCards] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [step, setStep] = useState(0);
@@ -41,6 +42,7 @@ export default function Home() {
     if (gameType === "2500") {
       setTargetScore("2500");
       setRoundWinBonus("0");
+      setShowPlayedCards(true);
     } else if (gameType === "hand-and-foot") {
       setTargetScore("0");
       setRoundWinBonus("0");
@@ -95,7 +97,11 @@ export default function Home() {
       }
       const body =
         gameType === "2500"
-          ? { type: "2500" as const, targetScore: Number(targetScore) }
+          ? {
+              type: "2500" as const,
+              targetScore: Number(targetScore),
+              showPlayedCards,
+            }
           : gameType === "hand-and-foot"
             ? { type: "hand-and-foot" as const }
             : { type: "nertz" as const, targetScore: Number(targetScore), roundWinBonus: Number(roundWinBonus) };
@@ -213,7 +219,7 @@ export default function Home() {
               </div>
             ) : null}
             {step === 1 && gameType !== "hand-and-foot" ? (
-              <div className="flex flex-col justify-start sm:flex-1 sm:justify-center">
+              <div className="flex flex-col justify-start gap-5 sm:flex-1 sm:justify-center">
                 <label className="text-sm font-medium text-[var(--game-muted)] sm:text-xs">
                   Winning score (play to)
                   <input
@@ -225,6 +231,30 @@ export default function Home() {
                     onKeyDown={onInputEnter}
                   />
                 </label>
+                {gameType === "2500" ? (
+                  <div className="flex items-start justify-between gap-4 rounded-2xl border border-white/10 bg-black/15 px-4 py-4">
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium text-[var(--game-text)]">Cards played tracker</p>
+                      <p className="mt-1 text-pretty text-xs leading-relaxed text-[var(--game-muted)]">
+                        Let everyone mark which ranks have been laid down. You can change this in the lobby or anytime
+                        during play.
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      role="switch"
+                      aria-checked={showPlayedCards}
+                      className={`relative mt-0.5 h-8 w-14 shrink-0 rounded-full border transition touch-manipulation ${showPlayedCards ? "border-[var(--game-accent)] bg-[var(--game-accent)]" : "border-white/25 bg-white/10"}`}
+                      onClick={() => setShowPlayedCards((v) => !v)}
+                    >
+                      <span
+                        className={`absolute top-1/2 size-6 -translate-y-1/2 rounded-full bg-black shadow transition ${showPlayedCards ? "left-[calc(100%-1.625rem)]" : "left-1"}`}
+                        aria-hidden
+                      />
+                      <span className="sr-only">{showPlayedCards ? "On" : "Off"}</span>
+                    </button>
+                  </div>
+                ) : null}
                 {nav}
               </div>
             ) : null}
@@ -253,10 +283,16 @@ export default function Home() {
                     <span className="font-medium">{GAME_REGISTRY.find((g) => g.id === gameType)?.label}</span>
                   </li>
                   {gameType === "2500" ? (
-                    <li className="flex justify-between gap-4">
-                      <span className="text-[var(--game-muted)]">Play to</span>
-                      <span className="font-mono font-medium">{targetScore}</span>
-                    </li>
+                    <>
+                      <li className="flex justify-between gap-4">
+                        <span className="text-[var(--game-muted)]">Play to</span>
+                        <span className="font-mono font-medium">{targetScore}</span>
+                      </li>
+                      <li className="flex justify-between gap-4">
+                        <span className="text-[var(--game-muted)]">Cards played tracker</span>
+                        <span className="font-medium">{showPlayedCards ? "On" : "Off"}</span>
+                      </li>
+                    </>
                   ) : (
                     <li className="flex justify-between gap-4">
                       <span className="text-[var(--game-muted)]">Rounds</span>
@@ -268,7 +304,7 @@ export default function Home() {
                 <p className="text-pretty text-sm leading-relaxed text-[var(--game-muted)]">
                   {gameType === "hand-and-foot"
                     ? "Assign teams in the lobby, then play three rounds. The host ends each round; teams enter scores on their phones."
-                    : "The host ends each round of play, then everyone logs their score on their own device. When all scores are in, the next round starts."}
+                    : "The host ends each round of play, then everyone logs their score. The host locks the round to start the next one; players can edit until then."}
                 </p>
                 {nav}
               </div>

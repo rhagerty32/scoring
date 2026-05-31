@@ -7,7 +7,7 @@ import { readHostToken } from "@/lib/client/storage";
 import type { PublicGamePayload, PublicRoundScore } from "@/lib/server/gameState";
 
 const BTN_PRIMARY =
-    "flex min-h-12 w-full touch-manipulation items-center justify-center rounded-2xl bg-[var(--game-accent)] px-4 text-base font-semibold text-black active:opacity-90 disabled:pointer-events-none disabled:opacity-45";
+    "flex min-h-12 w-full touch-manipulation items-center justify-center rounded-2xl bg-[var(--game-accent)] px-4 text-base font-semibold text-[var(--game-on-accent)] active:opacity-90 disabled:pointer-events-none disabled:opacity-45";
 
 const FIELD =
     "min-h-12 w-full rounded-2xl border border-white/15 bg-black/25 px-4 text-base font-mono text-[var(--game-text)] outline-none transition focus:border-[var(--game-accent)] focus:ring-2 focus:ring-[var(--game-accent)]/30";

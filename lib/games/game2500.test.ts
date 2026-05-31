@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   applyRankToggle,
+  applyWentOutToggle,
   compareRanks2500,
   normalizeScoreTapMeta,
   parse2500ScorePayload,
@@ -10,6 +11,26 @@ import {
   serializeRankClaimsJson,
   winnerPlayerIds2500,
 } from "./game2500";
+
+describe("applyWentOutToggle", () => {
+  it("allows one player to claim went out", () => {
+    const r = applyWentOutToggle(null, "p1", true);
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.wentOutPlayerId).toBe("p1");
+  });
+
+  it("blocks a second player", () => {
+    const r = applyWentOutToggle("p1", "p2", true);
+    expect(r.ok).toBe(false);
+  });
+
+  it("only claimant can clear", () => {
+    expect(applyWentOutToggle("p1", "p2", false).ok).toBe(false);
+    const r = applyWentOutToggle("p1", "p1", false);
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.wentOutPlayerId).toBeNull();
+  });
+});
 
 describe("applyRankToggle", () => {
   it("lets any player turn a rank on", () => {
@@ -80,6 +101,7 @@ describe("normalizeScoreTapMeta", () => {
       m10: 0,
       p100: 2,
       m100: 0,
+      wentOut: 0,
     });
   });
 });

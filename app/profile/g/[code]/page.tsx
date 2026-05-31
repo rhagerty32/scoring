@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useEffect } from "react";
 import { GameTheme } from "@/components/GameTheme";
+import { gameTypeLabel } from "@/lib/games/registry";
 import { ScoreChart } from "@/components/ScoreChart";
 import { StandingsTable } from "@/components/StandingsTable";
 import type { PublicGamePayload } from "@/lib/server/gameState";
@@ -88,7 +89,7 @@ export default function ProfileGamePage() {
           </Link>
           <h1 className="mt-2 font-mono text-2xl font-semibold text-[var(--game-text)]">{game.code}</h1>
           <p className="mt-1 text-sm text-[var(--game-muted)]">
-            {game.type} · You played as {you?.displayName ?? "?"}
+            {gameTypeLabel(game.type)} · You played as {you?.displayName ?? "?"}
             {won === true ? (
               <span className="ml-2 text-emerald-300">· Win</span>
             ) : won === false ? (
@@ -126,6 +127,9 @@ export default function ProfileGamePage() {
                     {mine ? (
                       <span className="mt-1 block font-mono text-[var(--game-muted)]">
                         Your line: {mine.score} pts, pen {mine.penalty}, bonus {mine.bonus} → total {mine.total}
+                        {game.type === "2500" && (r.wentOutPlayerId === yourPlayerId || mine.scoreMeta?.wentOut === 1) ? (
+                          <span className="text-[var(--game-accent)]"> · went out (+100)</span>
+                        ) : null}
                       </span>
                     ) : (
                       <span className="mt-1 block text-[var(--game-muted)]">No score saved for you this round.</span>

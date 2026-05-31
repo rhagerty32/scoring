@@ -94,6 +94,8 @@ export const rounds = sqliteTable(
     wildRank: text("wild_rank"),
     /** JSON: { [rank]: playerId } — who marked each rank as played down. */
     rankClaimsJson: text("rank_claims_json"),
+    /** 2500 scoring: player who went out this round (at most one). */
+    wentOutPlayerId: text("went_out_player_id").references(() => players.id, { onDelete: "set null" }),
   },
   (t) => [
     index("rounds_game_idx").on(t.gameId),

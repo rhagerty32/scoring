@@ -4,6 +4,7 @@ import { getDb } from "@/lib/db";
 import { games, players, rounds } from "@/lib/db/schema";
 import {
   applyRankToggle,
+  applyWentOutToggle,
   isValid2500Rank,
   parseRankClaimsJson,
   serializeRankClaimsJson,
@@ -15,6 +16,7 @@ export const runtime = "nodejs";
 const patchBody = z.discriminatedUnion("action", [
   z.object({ action: z.literal("wild"), wildRank: z.string().nullable() }),
   z.object({ action: z.literal("rank"), rank: z.string(), turnOn: z.boolean() }),
+  z.object({ action: z.literal("wentOut"), turnOn: z.boolean() }),
 ]);
 
 type RouteCtx = { params: Promise<{ code: string }> };
@@ -39,7 +41,7 @@ export async function PATCH(req: Request, ctx: RouteCtx) {
   const [game] = await db.select().from(games).where(eq(games.code, normalized)).limit(1);
   if (!game) return notFound("Game not found");
   if (game.status !== "active") return badRequest("Game is not active");
-  if (game.type !== "2500") return badRequest("Not a 2500 game");
+  if (game.type !== "2500") return badRequest("Not a Wild Things game");
 
   const [player] = await db.select().from(players).where(eq(players.playerToken, playerToken)).limit(1);
   if (!player || player.gameId !== game.id) return unauthorized("Invalid player token");
@@ -50,6 +52,17 @@ export async function PATCH(req: Request, ctx: RouteCtx) {
     .where(and(eq(rounds.gameId, game.id), eq(rounds.number, game.currentRound)))
     .limit(1);
   if (!round || round.lockedAt != null) return badRequest("No open round");
+
+  if (parsed.data.action === "wentOut") {
+    if (round.playPhase !== "scoring") {
+      return badRequest("Went out can only be claimed during scoring");
+    }
+    const res = applyWentOutToggle(round.wentOutPlayerId, player.id, parsed.data.turnOn);
+    if (!res.ok) return badRequest(res.error);
+    await db.update(rounds).set({ wentOutPlayerId: res.wentOutPlayerId }).where(eq(rounds.id, round.id));
+    return json({ ok: true });
+  }
+
   if (round.playPhase !== "playing") return badRequest("Rank and wild edits are frozen during scoring");
 
   if (parsed.data.action === "rank" && game.showPlayedCards === 0) {
@@ -57,6 +70,10 @@ export async function PATCH(req: Request, ctx: RouteCtx) {
   }
 
   if (parsed.data.action === "wild") {
+    const hostToken = req.headers.get("x-host-token");
+    if (!hostToken || game.hostToken !== hostToken) {
+      return unauthorized("Only the host can set the wild card");
+    }
     const wr = parsed.data.wildRank;
     const normalizedWild = wr === "" ? null : wr;
     if (normalizedWild != null && !isValid2500Rank(normalizedWild)) {

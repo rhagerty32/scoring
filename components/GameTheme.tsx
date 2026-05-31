@@ -15,6 +15,21 @@ export function GameTheme({ type, children }: { type: string; children: React.Re
     };
   }, [def?.label]);
 
+  useEffect(() => {
+    const color = def?.theme.cssVars["--game-bg"] ?? "#17120f";
+    let meta = document.querySelector('meta[name="theme-color"]');
+    if (!meta) {
+      meta = document.createElement("meta");
+      meta.setAttribute("name", "theme-color");
+      document.head.appendChild(meta);
+    }
+    const previous = meta.getAttribute("content");
+    meta.setAttribute("content", color);
+    return () => {
+      meta!.setAttribute("content", previous ?? "#17120f");
+    };
+  }, [def?.theme.cssVars]);
+
   const vars = (def?.theme.cssVars ?? {}) as CSSProperties;
   const attr = def?.theme.dataAttr ?? "nertz";
   return (

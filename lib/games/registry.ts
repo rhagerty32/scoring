@@ -26,6 +26,8 @@ export const GAME_REGISTRY: GameDefinition[] = [
         "--game-surface-2": "#2f2a22",
         "--game-accent": "#f97316",
         "--game-accent-2": "#5eead4",
+        "--game-on-accent": "#1a0f05",
+        "--game-on-accent-2": "#0a1614",
         "--game-warn": "#fbbf24",
         "--game-text": "#faf6f0",
         "--game-muted": "#a89b8f",
@@ -47,6 +49,8 @@ export const GAME_REGISTRY: GameDefinition[] = [
         "--game-surface-2": "#28302c",
         "--game-accent": "#34d399",
         "--game-accent-2": "#fcd34d",
+        "--game-on-accent": "#041008",
+        "--game-on-accent-2": "#1a1408",
         "--game-warn": "#fb923c",
         "--game-text": "#f4faf7",
         "--game-muted": "#8fa39a",
@@ -68,6 +72,8 @@ export const GAME_REGISTRY: GameDefinition[] = [
         "--game-surface-2": "#1a2a22",
         "--game-accent": "#34d399",
         "--game-accent-2": "#a3e635",
+        "--game-on-accent": "#041008",
+        "--game-on-accent-2": "#141a06",
         "--game-warn": "#fbbf24",
         "--game-text": "#ecfdf5",
         "--game-muted": "#86a89a",
@@ -78,23 +84,25 @@ export const GAME_REGISTRY: GameDefinition[] = [
   },
   {
     id: "2500",
-    label: "2500",
-        description:
-            "Race to a target score with meld tracking, wild card, and round scoring. Aces are low in rank (below 3); scoring still uses ±100 for aces.",
+    label: "Wild Things",
+    description:
+      "Race to a target with meld tracking, wild cards, and round scoring. Aces are low in rank (below 3); scoring still uses ±100 for aces.",
     enabled: true,
     theme: {
-      dataAttr: "game-2500",
+      dataAttr: "wild-things",
       cssVars: {
-        "--game-bg": "#0f1420",
-        "--game-surface": "#161d2e",
-        "--game-surface-2": "#1e2738",
-        "--game-accent": "#a78bfa",
-        "--game-accent-2": "#38bdf8",
-        "--game-warn": "#fbbf24",
-        "--game-text": "#f1f5f9",
-        "--game-muted": "#94a3b8",
+        "--game-bg": "#05040a",
+        "--game-surface": "#0c0a12",
+        "--game-surface-2": "#14101c",
+        "--game-accent": "#8f7eb8",
+        "--game-accent-2": "#4a3f68",
+        "--game-on-accent": "#f2eff8",
+        "--game-on-accent-2": "#ebe6f5",
+        "--game-warn": "#c9a86a",
+        "--game-text": "#e8e4f0",
+        "--game-muted": "#6a6578",
         "--game-radius": "14px",
-        "--game-shadow": "0 18px 50px rgba(0, 0, 0, 0.5)",
+        "--game-shadow": "0 22px 60px rgba(0, 0, 0, 0.72)",
       },
     },
   },
@@ -102,4 +110,9 @@ export const GAME_REGISTRY: GameDefinition[] = [
 
 export function getGameDefinition(id: string): GameDefinition | undefined {
   return GAME_REGISTRY.find((g) => g.id === id);
+}
+
+/** User-facing name for a game type id (e.g. `2500` → Wild Things). */
+export function gameTypeLabel(id: string): string {
+  return getGameDefinition(id)?.label ?? id;
 }

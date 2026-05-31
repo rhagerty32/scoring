@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect } from "react";
 import { GameTheme } from "@/components/GameTheme";
+import { gameTypeLabel } from "@/lib/games/registry";
 
 type ProfileResponse = {
   username: string;
@@ -120,7 +121,7 @@ export default function ProfilePage() {
                   >
                     <div>
                       <span className="font-mono text-base font-semibold text-[var(--game-text)]">{g.code}</span>
-                      <span className="ml-2 text-xs text-[var(--game-muted)]">{g.type}</span>
+                      <span className="ml-2 text-xs text-[var(--game-muted)]">{gameTypeLabel(g.type)}</span>
                       <p className="text-sm text-[var(--game-muted)]">
                         As <span className="text-[var(--game-text)]">{g.displayName}</span>
                         {g.status !== "done" ? (

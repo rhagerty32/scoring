@@ -12,6 +12,7 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
+import type { LegendPayload } from "recharts";
 import { playerColorByIndex, playerColorMapFromStandings, playerIdsByStandings } from "@/lib/client/playerColors";
 import type { PublicGamePayload } from "@/lib/server/gameState";
 
@@ -24,6 +25,18 @@ export function ScoreChart({ game }: { game: PublicGamePayload }) {
     return [...byStandings, ...trailing];
   }, [game.standings, game.chart.keys]);
   const colors = useMemo(() => playerColorMapFromStandings(game.standings), [game.standings]);
+  const legendItemSorter = useMemo(
+    () => (entry: LegendPayload) => {
+      const raw = entry.dataKey;
+      const id =
+        typeof raw === "string" || typeof raw === "number"
+          ? String(raw)
+          : String(entry.value ?? "");
+      const idx = keys.indexOf(id);
+      return idx === -1 ? keys.length : idx;
+    },
+    [keys],
+  );
   const yMax = useMemo(() => {
     let max = game.type === "hand-and-foot" ? 0 : game.targetScore;
     for (const pt of points) {
@@ -47,13 +60,6 @@ export function ScoreChart({ game }: { game: PublicGamePayload }) {
     game.type === "hand-and-foot"
       ? new Map(game.teams.map((t) => [t.id, t.name]))
       : new Map(game.players.map((p) => [p.id, p.displayName]));
-  const legendPayload = keys.map((id) => ({
-    value: nameById.get(id) ?? id,
-    type: "line" as const,
-    color: colors.get(id) ?? playerColorByIndex(0),
-    id,
-  }));
-
   return (
     <div className="h-[min(52svh,420px)] w-full rounded-2xl border border-white/10 bg-[var(--game-surface)] p-2 shadow-[var(--game-shadow)] sm:h-80 sm:p-4">
       <ResponsiveContainer width="100%" height="100%">
@@ -92,9 +98,8 @@ export function ScoreChart({ game }: { game: PublicGamePayload }) {
             labelFormatter={(v) => `Round ${v}`}
             formatter={(value, name) => [value, nameById.get(String(name)) ?? name]}
           />
-          {/* recharts Legend `payload` prop is supported at runtime; types omit it in this version */}
           <Legend
-            {...({ payload: legendPayload } as object)}
+            itemSorter={legendItemSorter}
             verticalAlign="bottom"
             height={44}
             wrapperStyle={{ fontSize: "11px", paddingTop: "6px" }}
@@ -104,6 +109,7 @@ export function ScoreChart({ game }: { game: PublicGamePayload }) {
               key={k}
               type="monotone"
               dataKey={k}
+              name={nameById.get(k) ?? k}
               stroke={colors.get(k) ?? playerColorByIndex(0)}
               strokeWidth={2.5}
               dot={false}

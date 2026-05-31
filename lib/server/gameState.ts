@@ -6,6 +6,7 @@ import {
     parseRankClaimsJson,
     parseScoreTapMeta,
     type ScoreTapMeta,
+    WENT_OUT_BONUS,
     winnerPlayerIds2500,
 } from "@/lib/games/game2500";
 import {
@@ -60,6 +61,8 @@ export type PublicRound = {
     playPhase: string | null;
     wildRank: string | null;
     rankClaims: Record<string, string>;
+    /** 2500: player who went out this round, if any. */
+    wentOutPlayerId: string | null;
     scores: PublicRoundScore[];
 };
 
@@ -77,6 +80,8 @@ export type StandingsRow = {
     maxNetRound?: number | null;
     /** Game 2500: count of wild cards (p100 + m100) across locked rounds. */
     hundredTapEvents?: number;
+    /** Game 2500: rounds where this player went out. */
+    wentOutRounds?: number;
 };
 
 export type ChartPoint = { round: number;[playerId: string]: number | string };
@@ -150,6 +155,7 @@ export function buildPublicGameState(input: {
             playPhase: r.playPhase ?? null,
             wildRank: r.wildRank ?? null,
             rankClaims: publicRankClaims(r.rankClaimsJson),
+            wentOutPlayerId: game.type === "2500" ? (r.wentOutPlayerId ?? null) : null,
             scores: (scoreByRound.get(r.id) ?? []).map((s) => mapRoundScoreRow(s, game.type)),
         }));
 
@@ -178,7 +184,15 @@ export function buildPublicGameState(input: {
     if (current) {
         for (const pid of playerIds) {
             const row = current.scores.find((s) => s.playerId === pid);
-            const t = row?.total ?? 0;
+            let t = row?.total ?? 0;
+            if (
+                game.type === "2500" &&
+                current.wentOutPlayerId === pid &&
+                !row &&
+                current.playPhase === "scoring"
+            ) {
+                t += WENT_OUT_BONUS;
+            }
             cumulativeDisplay.set(pid, (cumulativeLocked.get(pid) ?? 0) + t);
         }
     }
@@ -191,6 +205,7 @@ export function buildPublicGameState(input: {
         let sumScore = 0;
         const nets: number[] = [];
         let hundredTapEvents = 0;
+        let wentOutRounds = 0;
         for (const r of lockedRounds) {
             const row = r.scores.find((s) => s.playerId === p.id);
             sumLocked += row?.total ?? 0;
@@ -199,6 +214,7 @@ export function buildPublicGameState(input: {
             nets.push(row?.total ?? 0);
             const meta = row?.scoreMeta;
             if (meta) hundredTapEvents += meta.p100 + meta.m100;
+            if (r.wentOutPlayerId === p.id || row?.scoreMeta?.wentOut === 1) wentOutRounds += 1;
         }
         const avg = numLocked > 0 ? sumLocked / numLocked : 0;
         const avgPenalty = numLocked > 0 ? sumPenalty / numLocked : 0;
@@ -217,6 +233,7 @@ export function buildPublicGameState(input: {
                     minNetRound: minNetRound ?? null,
                     maxNetRound: maxNetRound ?? null,
                     hundredTapEvents,
+                    wentOutRounds,
                 }
                 : {}),
         };
@@ -228,6 +245,7 @@ export function buildPublicGameState(input: {
         let sumTotal = 0;
         let negativeRounds = 0;
         let bonusWins = 0;
+        let wentOutRounds = 0;
         for (const r of lockedRounds) {
             const row = r.scores.find((s) => s.playerId === p.id);
             const penalty = row?.penalty ?? 0;
@@ -239,6 +257,9 @@ export function buildPublicGameState(input: {
             sumTotal += total;
             if (total < 0) negativeRounds += 1;
             if (game.roundWinBonus > 0 && bonus === game.roundWinBonus) bonusWins += 1;
+            if (game.type === "2500" && (r.wentOutPlayerId === p.id || row?.scoreMeta?.wentOut === 1)) {
+                wentOutRounds += 1;
+            }
         }
         return {
             playerId: p.id,
@@ -247,9 +268,10 @@ export function buildPublicGameState(input: {
             sumTotal,
             negativeRounds,
             bonusWins,
+            wentOutRounds,
         };
     });
-    const groupAwards = computeGroupAwards(lockedAggs, numLocked, game.roundWinBonus);
+    const groupAwards = computeGroupAwards(lockedAggs, numLocked, game.roundWinBonus, game.type === "2500");
 
     const cumulativeForProjection = new Map<string, number[]>();
     for (const pid of playerIds) {
@@ -370,6 +392,7 @@ function buildHandAndFootPublicState(input: {
             playPhase: r.playPhase ?? null,
             wildRank: r.wildRank ?? null,
             rankClaims: parseRankClaimsJson(r.rankClaimsJson),
+            wentOutPlayerId: null,
             scores: (scoreByRound.get(r.id) ?? []).map((s) => mapRoundScoreRow(s, game.type)),
         }));
 

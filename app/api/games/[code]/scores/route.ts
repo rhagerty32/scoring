@@ -2,7 +2,7 @@ import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 import { getDb } from "@/lib/db";
 import { games, players, roundScores, rounds } from "@/lib/db/schema";
-import { normalizeScoreTapMeta, parse2500ScorePayload } from "@/lib/games/game2500";
+import { normalizeScoreTapMeta, parse2500ScorePayload, WENT_OUT_BONUS } from "@/lib/games/game2500";
 import { parseHandAndFootScorePayload } from "@/lib/games/handAndFoot";
 import { parseScorePayload } from "@/lib/games/nertz";
 import { randomId } from "@/lib/ids";
@@ -19,6 +19,7 @@ const scoreMetaSchema = z
     m10: z.coerce.number().int().min(0).max(10_000).optional(),
     p100: z.coerce.number().int().min(0).max(10_000).optional(),
     m100: z.coerce.number().int().min(0).max(10_000).optional(),
+    wentOut: z.coerce.number().int().min(0).max(1).optional(),
   })
   .optional();
 
@@ -135,8 +136,14 @@ export async function POST(req: Request, ctx: RouteCtx) {
           return { error: "The host has not ended this round yet", status: 400 };
         }
         totals = parse2500ScorePayload(data);
-        scoreMetaJson =
-          data.scoreMeta != null ? JSON.stringify(normalizeScoreTapMeta(data.scoreMeta)) : null;
+        const wentOutThisRound = round.wentOutPlayerId === player!.id;
+        if (wentOutThisRound) {
+          totals.score += WENT_OUT_BONUS;
+          totals.total += WENT_OUT_BONUS;
+        }
+        const meta = normalizeScoreTapMeta(data.scoreMeta);
+        meta.wentOut = wentOutThisRound ? 1 : 0;
+        scoreMetaJson = JSON.stringify(meta);
       } else {
         const allowedBonus = new Set([0, game.roundWinBonus]);
         if (!allowedBonus.has(data.bonus)) {
@@ -194,6 +201,16 @@ export async function POST(req: Request, ctx: RouteCtx) {
         scoreMetaJson:
           game.type === "2500" || game.type === "hand-and-foot" ? scoreMetaJson : null,
       });
+    }
+
+    // Wild Things: host locks the round via POST /finalize; players may edit until then.
+    if (game.type === "2500") {
+      return {
+        ok: true,
+        id: scoreRowId,
+        total: totals.total,
+        roundFinalized: false,
+      };
     }
 
     const fin = await finalizeOpenRoundInTransaction(tx, { game, openRound: round });

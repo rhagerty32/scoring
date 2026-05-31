@@ -79,6 +79,8 @@ export function applyRankToggle(
     return { ok: true, claims: next };
 }
 
+export const WENT_OUT_BONUS = 100;
+
 export type ScoreTapMeta = {
     p5: number;
     m5: number;
@@ -86,9 +88,35 @@ export type ScoreTapMeta = {
     m10: number;
     p100: number;
     m100: number;
+    /** 1 if this row was saved while the player had gone out this round. */
+    wentOut?: number;
 };
 
-const emptyTaps: ScoreTapMeta = { p5: 0, m5: 0, p10: 0, m10: 0, p100: 0, m100: 0 };
+export type ApplyWentOutToggleResult =
+    | { ok: true; wentOutPlayerId: string | null }
+    | { ok: false; error: string };
+
+/** At most one player may go out per round; only that player can clear. */
+export function applyWentOutToggle(
+    currentPlayerId: string | null | undefined,
+    actorPlayerId: string,
+    turnOn: boolean,
+): ApplyWentOutToggleResult {
+    const current = currentPlayerId ?? null;
+    if (turnOn) {
+        if (current != null && current !== actorPlayerId) {
+            return { ok: false, error: "Someone else already went out this round" };
+        }
+        return { ok: true, wentOutPlayerId: actorPlayerId };
+    }
+    if (current == null) return { ok: true, wentOutPlayerId: null };
+    if (current !== actorPlayerId) {
+        return { ok: false, error: "Only the player who went out can clear it" };
+    }
+    return { ok: true, wentOutPlayerId: null };
+}
+
+const emptyTaps: ScoreTapMeta = { p5: 0, m5: 0, p10: 0, m10: 0, p100: 0, m100: 0, wentOut: 0 };
 
 export function parseScoreTapMeta(raw: string | null | undefined): ScoreTapMeta {
     if (raw == null || raw === "") return { ...emptyTaps };
@@ -97,6 +125,7 @@ export function parseScoreTapMeta(raw: string | null | undefined): ScoreTapMeta 
         if (v == null || typeof v !== "object" || Array.isArray(v)) return { ...emptyTaps };
         const o = v as Record<string, unknown>;
         const n = (x: unknown) => (typeof x === "number" && Number.isFinite(x) && x >= 0 ? Math.floor(x) : 0);
+        const wentOut = o.wentOut === 1 ? 1 : 0;
         return {
             p5: n(o.p5),
             m5: n(o.m5),
@@ -104,6 +133,7 @@ export function parseScoreTapMeta(raw: string | null | undefined): ScoreTapMeta 
             m10: n(o.m10),
             p100: n(o.p100),
             m100: n(o.m100),
+            wentOut,
         };
     } catch {
         return { ...emptyTaps };
@@ -149,6 +179,7 @@ export function normalizeScoreTapMeta(input: Partial<ScoreTapMeta> | undefined):
     const n = (x: unknown) =>
         typeof x === "number" && Number.isFinite(x) ? Math.max(0, Math.min(10_000, Math.floor(x))) : 0;
     if (!input) return { ...emptyTaps };
+    const wentOut = input.wentOut === 1 ? 1 : 0;
     return {
         p5: n(input.p5),
         m5: n(input.m5),
@@ -156,5 +187,6 @@ export function normalizeScoreTapMeta(input: Partial<ScoreTapMeta> | undefined):
         m10: n(input.m10),
         p100: n(input.p100),
         m100: n(input.m100),
+        wentOut,
     };
 }

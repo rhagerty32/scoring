@@ -41,10 +41,20 @@ body {
 }
 
 .game-shell {
+  --game-on-accent: #0a0a0a;
+  --game-on-accent-2: #0a0a0a;
   min-height: 100dvh;
   background:
     radial-gradient(circle at 20% 16%, color-mix(in oklab, var(--game-accent, #fff) 10%, transparent), transparent 48%),
     radial-gradient(circle at 78% 10%, color-mix(in oklab, var(--game-accent-2, #fff) 8%, transparent), transparent 44%),
     var(--game-bg, #17120f);
   color: var(--game-text, #faf6f0);
+}
+
+.game-shell[data-game="wild-things"] {
+  background:
+    radial-gradient(ellipse 95% 60% at 50% -12%, color-mix(in oklab, var(--game-accent) 16%, transparent), transparent 62%),
+    radial-gradient(circle at 92% 85%, color-mix(in oklab, #5c4d8a 10%, transparent), transparent 45%),
+    radial-gradient(circle at 4% 70%, color-mix(in oklab, var(--game-accent-2) 12%, transparent), transparent 40%),
+    var(--game-bg);
 }

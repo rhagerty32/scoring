@@ -11,6 +11,7 @@ const patchBody = z.object({
   targetScore: z.coerce.number().int().min(1).max(100_000).optional(),
   roundWinBonus: z.coerce.number().int().min(0).max(1000).optional(),
   showPlayedCards: z.boolean().optional(),
+  endGame: z.literal(true).optional(),
 });
 
 type RouteCtx = { params: Promise<{ code: string }> };
@@ -31,7 +32,8 @@ export async function PATCH(req: Request, ctx: RouteCtx) {
   const hasTarget = parsed.data.targetScore !== undefined;
   const hasBonus = parsed.data.roundWinBonus !== undefined;
   const hasShowPlayed = parsed.data.showPlayedCards !== undefined;
-  if (!hasTarget && !hasBonus && !hasShowPlayed) return badRequest("Nothing to update");
+  const hasEndGame = parsed.data.endGame === true;
+  if (!hasTarget && !hasBonus && !hasShowPlayed && !hasEndGame) return badRequest("Nothing to update");
 
   const db = getDb();
   const normalized = code.trim().toUpperCase();
@@ -43,7 +45,7 @@ export async function PATCH(req: Request, ctx: RouteCtx) {
     game.status === "active" &&
     game.type === "2500" &&
     !hasBonus &&
-    (hasTarget || hasShowPlayed);
+    (hasTarget || hasShowPlayed || hasEndGame);
   if (game.status === "lobby") {
     // Lobby: full settings edits allowed.
   } else if (midGame2500Settings) {
@@ -53,7 +55,7 @@ export async function PATCH(req: Request, ctx: RouteCtx) {
   }
 
   if (hasShowPlayed && game.type !== "2500") {
-    return badRequest("Meld tracker visibility applies only to 2500 games");
+    return badRequest("Meld tracker visibility applies only to Wild Things games");
   }
 
   if (game.status === "active" && hasBonus) {
@@ -69,7 +71,9 @@ export async function PATCH(req: Request, ctx: RouteCtx) {
     : game.showPlayedCards;
 
   let nextStatus = game.status;
-  if (midGame2500Settings && hasTarget && nextTarget !== game.targetScore) {
+  if (midGame2500Settings && hasEndGame) {
+    nextStatus = "done";
+  } else if (midGame2500Settings && hasTarget && nextTarget !== game.targetScore) {
     const lockedRoundRows = await db
       .select()
       .from(rounds)

@@ -6,6 +6,7 @@ export type PlayerLockedAgg = {
   sumTotal: number;
   negativeRounds: number;
   bonusWins: number;
+  wentOutRounds?: number;
 };
 
 export type GroupAward = {
@@ -20,6 +21,7 @@ const AWARD_TITLES: Record<string, string> = {
   most_bonus_wins: "Professional Closer",
   lowest_avg_net: "Statistically the Couch",
   highest_avg_score: "Card Volume Enjoyer",
+  most_went_out: "First to the Door",
 };
 
 function winnersByMax(values: Map<string, number>): string[] {
@@ -54,6 +56,7 @@ export function computeGroupAwards(
   aggs: PlayerLockedAgg[],
   numLocked: number,
   roundWinBonus: number,
+  include2500Awards = false,
 ): GroupAward[] {
   if (numLocked <= 0 || aggs.length === 0) return [];
 
@@ -96,6 +99,15 @@ export function computeGroupAwards(
     const avgScoreMap = new Map(aggs.map((a) => [a.playerId, a.sumScore / numLocked]));
     const ids = winnersByMax(avgScoreMap);
     if (ids.length > 0) awards.push({ id: "highest_avg_score", title: AWARD_TITLES.highest_avg_score!, playerIds: ids });
+  }
+
+  if (include2500Awards) {
+    const wentOuts = aggs.map((a) => a.wentOutRounds ?? 0);
+    if (!allSame(wentOuts) && wentOuts.some((n) => n > 0)) {
+      const wentOutMap = new Map(aggs.map((a) => [a.playerId, a.wentOutRounds ?? 0]));
+      const ids = winnersByMax(wentOutMap);
+      if (ids.length > 0) awards.push({ id: "most_went_out", title: AWARD_TITLES.most_went_out!, playerIds: ids });
+    }
   }
 
   return awards;

@@ -3,8 +3,9 @@
 import { type QueryClient, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
 import QRCode from "react-qr-code";
-import { useCallback, useEffect, useId, useImperativeHandle, useRef, useState, forwardRef, type KeyboardEvent } from "react";
+import { useCallback, useEffect, useId, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import { CopyTextButton } from "@/components/CopyTextButton";
+import { Game2500HostSettings, TargetScoreEditor } from "@/components/games/Game2500HostSettings";
 import { Game2500RoundPanel } from "@/components/games/Game2500RoundPanel";
 import { HandAndFootRoundPanel } from "@/components/games/HandAndFootRoundPanel";
 import { HandAndFootTeamBoard, handAndFootLobbyValid } from "@/components/games/HandAndFootTeamBoard";
@@ -18,6 +19,7 @@ import {
     writeShowStandings,
     writeStoredPlayer,
 } from "@/lib/client/storage";
+import { gameTypeLabel } from "@/lib/games/registry";
 import { computeRoundTotal } from "@/lib/games/nertz";
 import type { PublicGamePayload, PublicRoundScore } from "@/lib/server/gameState";
 import { GameTheme } from "./GameTheme";
@@ -31,10 +33,10 @@ const FIELD =
     "min-h-12 w-full rounded-2xl border border-white/15 bg-black/25 px-4 text-base text-[var(--game-text)] outline-none transition focus:border-[var(--game-accent)] focus:ring-2 focus:ring-[var(--game-accent)]/30";
 
 const BTN_PRIMARY =
-    "flex min-h-12 w-full touch-manipulation items-center justify-center rounded-2xl bg-[var(--game-accent)] px-4 text-base font-semibold text-black active:opacity-90 disabled:pointer-events-none disabled:opacity-45";
+    "flex min-h-12 w-full touch-manipulation items-center justify-center rounded-2xl bg-[var(--game-accent)] px-4 text-base font-semibold text-[var(--game-on-accent)] active:opacity-90 disabled:pointer-events-none disabled:opacity-45";
 
 const BTN_CYAN =
-    "flex min-h-12 w-full touch-manipulation items-center justify-center rounded-2xl bg-[var(--game-accent-2)] px-4 text-base font-semibold text-black active:opacity-90 disabled:pointer-events-none disabled:opacity-45";
+    "flex min-h-12 w-full touch-manipulation items-center justify-center rounded-2xl bg-[var(--game-accent-2)] px-4 text-base font-semibold text-[var(--game-on-accent-2)] active:opacity-90 disabled:pointer-events-none disabled:opacity-45";
 
 const BTN_GHOST =
     "flex min-h-12 touch-manipulation items-center justify-center rounded-2xl border border-white/20 bg-white/5 px-4 text-base font-medium text-[var(--game-text)] active:bg-white/10 disabled:pointer-events-none disabled:opacity-45";
@@ -126,6 +128,7 @@ export function GameRoom({ code }: { code: string }) {
             targetScore?: number;
             roundWinBonus?: number;
             showPlayedCards?: boolean;
+            endGame?: boolean;
         }) => {
             const host = readHostToken(normalized);
             if (!host) throw new Error("Missing host session");
@@ -211,6 +214,7 @@ function GameRoomInner({
         targetScore?: number;
         roundWinBonus?: number;
         showPlayedCards?: boolean;
+        endGame?: boolean;
     }) => Promise<unknown>;
     saving: boolean;
     qc: QueryClient;
@@ -268,7 +272,7 @@ function GameRoomInner({
                 </div>
             ) : null}
 
-            <GameRoomChrome game={game} />
+            <GameRoomChrome game={game} onSaveSettings={onSaveSettings} saving={saving} />
 
             {game.status === "done" ? (
                 <div className="rounded-2xl border border-white/10 bg-[var(--game-surface-2)] p-5 text-[var(--game-text)] shadow-[var(--game-shadow)] sm:rounded-[var(--game-radius)]">
@@ -301,7 +305,7 @@ function GameRoomInner({
 
             {game.status === "lobby" ? (
                 <Lobby
-                    key={`lobby-${game.targetScore}-${game.roundWinBonus}`}
+                    key={`lobby-${game.targetScore}-${game.roundWinBonus}-${game.showPlayedCards}`}
                     game={game}
                     code={normalized}
                     joinName={joinName}
@@ -371,33 +375,6 @@ function GameRoomInner({
                     </div>
 
                     <aside className="order-1 flex min-h-0 flex-col gap-4 md:sticky md:top-4 md:order-2 md:self-start">
-                        {game.status === "active" && game.type === "2500" && game.youAreHost ? (
-                            <div className="rounded-2xl border border-white/10 bg-[var(--game-surface)] p-4 shadow-[var(--game-shadow)] sm:rounded-[var(--game-radius)]">
-                                <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[var(--game-muted)]">
-                                    Host controls
-                                </p>
-                                <div className="mt-4 space-y-5">
-                                    <div>
-                                        <p className="text-sm font-medium text-[var(--game-text)]">Target score</p>
-                                        <p className="mt-1 text-pretty text-xs leading-relaxed text-[var(--game-muted)]">
-                                            Change the play-to score anytime. Saves when you leave the field.
-                                        </p>
-                                        <div className="mt-3">
-                                            <TargetScoreEditor
-                                                savedValue={game.targetScore}
-                                                onSave={(ts) => onSaveSettings({ targetScore: ts })}
-                                                savingExternal={saving}
-                                            />
-                                        </div>
-                                    </div>
-                                    <ShowPlayedCardsToggle
-                                        checked={game.showPlayedCards}
-                                        disabled={saving}
-                                        onChange={(showPlayedCards) => void onSaveSettings({ showPlayedCards })}
-                                    />
-                                </div>
-                            </div>
-                        ) : null}
                         {game.status === "active" ? (
                             <RoundPanel
                                 game={game}
@@ -463,7 +440,16 @@ function RoomDetailsFields({ game, variant }: { game: PublicGamePayload; variant
     return (
         <div className={outer}>
             <div className="min-w-0 flex-1">
-                <p className="text-xs uppercase tracking-[0.2em] text-[var(--game-muted)]">Room</p>
+                <p className="text-xs uppercase tracking-[0.2em] text-[var(--game-muted)]">
+                    {game.type === "2500" ? (
+                        <>
+                            <span className="text-[var(--game-accent)]">{gameTypeLabel(game.type)}</span>
+                            <span className="text-[var(--game-muted)]"> · Room</span>
+                        </>
+                    ) : (
+                        "Room"
+                    )}
+                </p>
                 <div className="mt-1 flex flex-wrap items-center gap-2">
                     <h1 className="break-all font-mono text-2xl font-semibold tracking-tight text-[var(--game-text)] sm:text-3xl">
                         {game.code}
@@ -537,24 +523,93 @@ function RoomInfoIcon({ className }: { className?: string }) {
     );
 }
 
-function GameRoomChrome({ game }: { game: PublicGamePayload }) {
+function SettingsIcon({ className }: { className?: string }) {
+    return (
+        <svg
+            className={className}
+            width="22"
+            height="22"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            aria-hidden
+        >
+            <path d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z" />
+            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9c.26.604.852.997 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z" />
+        </svg>
+    );
+}
+
+function HeaderPopover({
+    open,
+    panelId,
+    ariaLabel,
+    children,
+    align = "right",
+}: {
+    open: boolean;
+    panelId: string;
+    ariaLabel: string;
+    children: ReactNode;
+    align?: "right" | "left";
+}) {
+    if (!open) return null;
+    return (
+        <div
+            id={panelId}
+            role="dialog"
+            aria-label={ariaLabel}
+            className={`absolute top-full z-50 mt-2 max-h-[min(70dvh,28rem)] w-[min(22rem,calc(100vw-2rem))] overflow-y-auto rounded-2xl border border-white/10 bg-[var(--game-surface)] p-4 shadow-[var(--game-shadow)] sm:rounded-[var(--game-radius)] sm:p-5 ${align === "right" ? "right-0" : "left-0"}`}
+        >
+            {children}
+        </div>
+    );
+}
+
+function GameRoomChrome({
+    game,
+    onSaveSettings,
+    saving,
+}: {
+    game: PublicGamePayload;
+    onSaveSettings: (p: {
+        targetScore?: number;
+        roundWinBonus?: number;
+        showPlayedCards?: boolean;
+        endGame?: boolean;
+    }) => Promise<unknown>;
+    saving: boolean;
+}) {
     const compact = game.status === "active";
-    const [open, setOpen] = useState(false);
+    const [infoOpen, setInfoOpen] = useState(false);
+    const [settingsOpen, setSettingsOpen] = useState(false);
     const wrapRef = useRef<HTMLDivElement>(null);
-    const panelId = useId();
+    const infoPanelId = useId();
+    const settingsPanelId = useId();
+    const showHostSettings = compact && game.type === "2500" && game.youAreHost;
 
     useEffect(() => {
-        setOpen(false);
+        setInfoOpen(false);
+        setSettingsOpen(false);
     }, [game.status]);
 
     useEffect(() => {
-        if (!open || !compact) return;
+        if ((!infoOpen && !settingsOpen) || !compact) return;
         const onDoc = (e: PointerEvent) => {
             const el = wrapRef.current;
-            if (!el?.contains(e.target as Node)) setOpen(false);
+            if (!el?.contains(e.target as Node)) {
+                setInfoOpen(false);
+                setSettingsOpen(false);
+            }
         };
         const onKey = (e: globalThis.KeyboardEvent) => {
-            if (e.key === "Escape") setOpen(false);
+            if (e.key === "Escape") {
+                setInfoOpen(false);
+                setSettingsOpen(false);
+            }
         };
         document.addEventListener("pointerdown", onDoc, true);
         window.addEventListener("keydown", onKey);
@@ -562,7 +617,7 @@ function GameRoomChrome({ game }: { game: PublicGamePayload }) {
             document.removeEventListener("pointerdown", onDoc, true);
             window.removeEventListener("keydown", onKey);
         };
-    }, [open, compact]);
+    }, [infoOpen, settingsOpen, compact]);
 
     if (!compact) {
         return (
@@ -573,121 +628,63 @@ function GameRoomChrome({ game }: { game: PublicGamePayload }) {
     }
 
     return (
-        <header ref={wrapRef} className="relative flex justify-end">
+        <header ref={wrapRef} className="relative flex justify-end gap-2">
+            {showHostSettings ? (
+                <>
+                    <button
+                        type="button"
+                        className={INFO_BTN}
+                        aria-expanded={settingsOpen}
+                        aria-haspopup="dialog"
+                        aria-controls={settingsPanelId}
+                        onClick={() => {
+                            setSettingsOpen((v) => !v);
+                            setInfoOpen(false);
+                        }}
+                    >
+                        <span className="sr-only">Host settings</span>
+                        <SettingsIcon />
+                    </button>
+                    <HeaderPopover open={settingsOpen} panelId={settingsPanelId} ariaLabel="Host settings" align="right">
+                        <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[var(--game-muted)]">
+                            Host settings
+                        </p>
+                        <p className="mt-2 text-pretty text-xs leading-relaxed text-[var(--game-muted)]">
+                            Target score saves when you leave the field. Meld tracker toggles save immediately.
+                        </p>
+                        <div className="mt-4">
+                            <Game2500HostSettings
+                                targetScore={game.targetScore}
+                                showPlayedCards={game.showPlayedCards}
+                                saving={saving}
+                                onSaveSettings={onSaveSettings}
+                                onEndGame={() => onSaveSettings({ endGame: true })}
+                                showEndGame
+                            />
+                        </div>
+                    </HeaderPopover>
+                </>
+            ) : null}
             <button
                 type="button"
                 className={INFO_BTN}
-                aria-expanded={open}
+                aria-expanded={infoOpen}
                 aria-haspopup="dialog"
-                aria-controls={panelId}
-                onClick={() => setOpen((v) => !v)}
+                aria-controls={infoPanelId}
+                onClick={() => {
+                    setInfoOpen((v) => !v);
+                    setSettingsOpen(false);
+                }}
             >
                 <span className="sr-only">Room details, invite link, and shortcuts</span>
                 <RoomInfoIcon />
             </button>
-            {open ? (
-                <div
-                    id={panelId}
-                    role="dialog"
-                    aria-label="Room details"
-                    className="absolute right-0 top-full z-50 mt-2 max-h-[min(70dvh,28rem)] w-[min(22rem,calc(100vw-2rem))] overflow-y-auto rounded-2xl border border-white/10 bg-[var(--game-surface)] p-4 shadow-[var(--game-shadow)] sm:rounded-[var(--game-radius)] sm:p-5"
-                >
-                    <RoomDetailsFields game={game} variant="popover" />
-                </div>
-            ) : null}
+            <HeaderPopover open={infoOpen} panelId={infoPanelId} ariaLabel="Room details">
+                <RoomDetailsFields game={game} variant="popover" />
+            </HeaderPopover>
         </header>
     );
 }
-
-function ShowPlayedCardsToggle({
-    checked,
-    disabled,
-    onChange,
-}: {
-    checked: boolean;
-    disabled?: boolean;
-    onChange: (showPlayedCards: boolean) => void;
-}) {
-    const id = useId();
-    return (
-        <div className="flex items-start justify-between gap-4">
-            <div className="min-w-0">
-                <label htmlFor={id} className="text-sm font-medium text-[var(--game-text)]">
-                    Cards played tracker
-                </label>
-                <p className="mt-1 text-pretty text-xs leading-relaxed text-[var(--game-muted)]">
-                    When off, nobody sees which ranks are down during play or scoring.
-                </p>
-            </div>
-            <button
-                id={id}
-                type="button"
-                role="switch"
-                aria-checked={checked}
-                disabled={disabled}
-                className={`relative mt-0.5 h-8 w-14 shrink-0 rounded-full border transition touch-manipulation disabled:opacity-45 ${checked ? "border-[var(--game-accent)] bg-[var(--game-accent)]" : "border-white/25 bg-white/10"}`}
-                onClick={() => onChange(!checked)}
-            >
-                <span
-                    className={`absolute top-1/2 size-6 -translate-y-1/2 rounded-full bg-black shadow transition ${checked ? "left-[calc(100%-1.625rem)]" : "left-1"}`}
-                    aria-hidden
-                />
-                <span className="sr-only">{checked ? "On" : "Off"}</span>
-            </button>
-        </div>
-    );
-}
-
-const TargetScoreEditor = forwardRef<
-    { flush: () => Promise<void> },
-    {
-        savedValue: number;
-        onSave: (targetScore: number) => Promise<unknown>;
-        savingExternal: boolean;
-    }
->(function TargetScoreEditor({ savedValue, onSave, savingExternal }, ref) {
-    const [draft, setDraft] = useState(String(savedValue));
-    const [note, setNote] = useState<"idle" | "saving" | "saved">("idle");
-
-    useEffect(() => {
-        setDraft(String(savedValue));
-    }, [savedValue]);
-
-    const persist = useCallback(async () => {
-        const ts = Number(draft);
-        if (!Number.isFinite(ts) || ts === savedValue) return;
-        setNote("saving");
-        try {
-            await onSave(ts);
-            setNote("saved");
-            window.setTimeout(() => setNote("idle"), 2000);
-        } catch {
-            setNote("idle");
-        }
-    }, [draft, savedValue, onSave]);
-
-    useImperativeHandle(ref, () => ({ flush: persist }), [persist]);
-
-    const showSaving = savingExternal || note === "saving";
-
-    return (
-        <label className="block text-sm font-medium text-[var(--game-muted)] sm:text-xs">
-            <span className="sr-only">Target score</span>
-            <input
-                className={`${FIELD} mt-0 font-mono`}
-                inputMode="numeric"
-                value={draft}
-                onChange={(e) => setDraft(e.target.value)}
-                onBlur={() => void persist()}
-            />
-            {showSaving ? (
-                <span className="mt-2 block text-xs text-[var(--game-accent-2)]">Saving…</span>
-            ) : note === "saved" ? (
-                <span className="mt-2 block text-xs text-[var(--game-accent)]">Saved.</span>
-            ) : null}
-        </label>
-    );
-});
 
 function Lobby({
     game,
@@ -717,6 +714,7 @@ function Lobby({
         targetScore?: number;
         roundWinBonus?: number;
         showPlayedCards?: boolean;
+        endGame?: boolean;
     }) => Promise<unknown>;
     saving: boolean;
 }) {
@@ -848,18 +846,24 @@ function Lobby({
 
                     {game.youAreHost ? (
                         <div className="mt-6 space-y-5 border-t border-white/10 pt-6">
-                            <div className={`grid gap-5 sm:gap-4 ${game.type === "2500" ? "" : "sm:grid-cols-2"}`}>
-                                <TargetScoreEditor
-                                    ref={targetScoreRef}
-                                    savedValue={game.targetScore}
-                                    onSave={(ts) =>
-                                        onSaveSettings(
-                                            game.type === "2500" ? { targetScore: ts } : { targetScore: ts, roundWinBonus: game.roundWinBonus },
-                                        )
-                                    }
-                                    savingExternal={saving}
+                            {game.type === "2500" ? (
+                                <Game2500HostSettings
+                                    targetScoreRef={targetScoreRef}
+                                    targetScore={game.targetScore}
+                                    showPlayedCards={game.showPlayedCards}
+                                    saving={saving}
+                                    onSaveSettings={onSaveSettings}
                                 />
-                                {game.type !== "2500" ? (
+                            ) : (
+                                <div className="grid gap-5 sm:grid-cols-2 sm:gap-4">
+                                    <TargetScoreEditor
+                                        ref={targetScoreRef}
+                                        savedValue={game.targetScore}
+                                        onSave={(ts) =>
+                                            onSaveSettings({ targetScore: ts, roundWinBonus: game.roundWinBonus })
+                                        }
+                                        savingExternal={saving}
+                                    />
                                     <label className="text-sm font-medium text-[var(--game-muted)] sm:text-xs">
                                         Round win bonus
                                         <input
@@ -870,15 +874,8 @@ function Lobby({
                                             onBlur={() => void persistRoundWinBonusIfDirty()}
                                         />
                                     </label>
-                                ) : null}
-                            </div>
-                            {game.type === "2500" ? (
-                                <ShowPlayedCardsToggle
-                                    checked={game.showPlayedCards}
-                                    disabled={saving}
-                                    onChange={(showPlayedCards) => void onSaveSettings({ showPlayedCards })}
-                                />
-                            ) : null}
+                                </div>
+                            )}
                             {game.type !== "2500" ? (
                                 <p className="text-xs text-[var(--game-muted)]">
                                     Settings save when you leave a field.{" "}
@@ -993,12 +990,21 @@ function RoundSubmissionRoster({
     }
 
     const submitted = new Set(current.scores.map((s) => s.playerId));
+    const wentOutPlayer =
+        game.type === "2500" && current.wentOutPlayerId
+            ? game.players.find((p) => p.id === current.wentOutPlayerId)
+            : null;
 
     return (
         <div className="mt-6 rounded-xl border border-white/10 bg-black/20 px-4 py-3">
             <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[var(--game-muted)] sm:text-[0.65rem]">
                 Scores in this round
             </p>
+            {wentOutPlayer ? (
+                <p className="mt-2 text-xs text-[var(--game-accent)]">
+                    Went out: <span className="font-medium">{wentOutPlayer.displayName}</span> (+100)
+                </p>
+            ) : null}
             <ul className="mt-3 space-y-2.5" aria-label="Who has submitted scores for the current round">
                 {game.players.map((p) => {
                     const done = submitted.has(p.id);
@@ -1023,13 +1029,15 @@ function RoundSubmissionRoster({
             {game.currentRoundComplete ? (
                 <p className="mt-3 text-pretty text-xs leading-relaxed text-[var(--game-muted)] sm:text-[0.65rem]">
                     {game.type === "2500"
-                        ? "All scores are in. The next round starts automatically."
+                        ? game.youAreHost
+                            ? "Everyone has submitted. Lock the round when you're ready — players can still edit until then."
+                            : "Everyone has submitted. You can still edit your score until the host starts the next round."
                         : "All scores are in. The round will advance on its own."}
                 </p>
             ) : (
                 <p className="mt-3 text-pretty text-xs leading-relaxed text-[var(--game-muted)] sm:text-[0.65rem]">
                     {game.type === "2500"
-                        ? "When everyone has finished scoring, the round locks and the next round begins."
+                        ? "Submit your score above. You can change it anytime before the host locks the round."
                         : "The round locks once every player has saved their row."}
                 </p>
             )}

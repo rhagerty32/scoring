@@ -86,8 +86,10 @@ export function YourStatsCard({ game, playerId }: { game: PublicGamePayload; pla
                                     </dd>
                                 </div>
                                 <div>
-                                    <dt className="text-[var(--game-muted)]">Wilds</dt>
-                                    <dd className="mt-0.5 font-mono tabular-nums text-[var(--game-text)]">{row.hundredTapEvents ?? 0}</dd>
+                                    <dt className="text-[var(--game-muted)]">Wilds / went out</dt>
+                                    <dd className="mt-0.5 font-mono tabular-nums text-[var(--game-text)]">
+                                        {row.hundredTapEvents ?? 0} / {row.wentOutRounds ?? 0}
+                                    </dd>
                                 </div>
                             </>
                         ) : (

@@ -1,6 +1,6 @@
 "use client";
 
-import { playerColorByIndex } from "@/lib/client/playerColors";
+import { playerColorByIndex, playerColorMapFromStandings } from "@/lib/client/playerColors";
 import type { PublicGamePayload } from "@/lib/server/gameState";
 
 export function StandingsTable({ game }: { game: PublicGamePayload }) {
@@ -88,6 +88,7 @@ export function StandingsTable({ game }: { game: PublicGamePayload }) {
 
     const favoritePlayerId = game.favoritePlayerId;
     const rows = [...game.standings].sort((a, b) => b.cumulative - a.cumulative);
+    const colors = playerColorMapFromStandings(game.standings);
 
     return (
         <>
@@ -98,7 +99,7 @@ export function StandingsTable({ game }: { game: PublicGamePayload }) {
                     const pace =
                         proj?.estimatedRoundsRemaining == null ? "—" : `~${proj.estimatedRoundsRemaining} rounds to goal`;
                     const isFav = favoritePlayerId === r.playerId;
-                    const color = playerColorByIndex(idx);
+                    const color = colors.get(r.playerId) ?? playerColorByIndex(0);
                     return (
                         <li
                             key={r.playerId}
@@ -139,8 +140,10 @@ export function StandingsTable({ game }: { game: PublicGamePayload }) {
                                             </dd>
                                         </div>
                                         <div>
-                                            <dt className="text-xs text-[var(--game-muted)]">Wilds (rnd)</dt>
-                                            <dd className="mt-0.5 font-mono tabular-nums text-[var(--game-text)]">{r.hundredTapEvents ?? 0}</dd>
+                                            <dt className="text-xs text-[var(--game-muted)]">Wilds / went out</dt>
+                                            <dd className="mt-0.5 font-mono tabular-nums text-[var(--game-text)]">
+                                                {r.hundredTapEvents ?? 0} / {r.wentOutRounds ?? 0}
+                                            </dd>
                                         </div>
                                     </>
                                 ) : (
@@ -182,7 +185,7 @@ export function StandingsTable({ game }: { game: PublicGamePayload }) {
                                 <>
                                     <th className="px-4 py-3 text-right font-medium">Min rnd</th>
                                     <th className="px-4 py-3 text-right font-medium">Max rnd</th>
-                                    <th className="px-4 py-3 text-right font-medium">Wilds</th>
+                                    <th className="px-4 py-3 text-right font-medium">Wilds / out</th>
                                 </>
                             ) : (
                                 <>
@@ -201,7 +204,7 @@ export function StandingsTable({ game }: { game: PublicGamePayload }) {
                                     ? "—"
                                     : `${proj.estimatedRoundsRemaining} rounds est.`;
                             const isFav = favoritePlayerId === r.playerId;
-                            const color = playerColorByIndex(idx);
+                            const color = colors.get(r.playerId) ?? playerColorByIndex(0);
                             return (
                                 <tr key={r.playerId} className="border-b border-white/5 last:border-0">
                                     <td className="px-4 py-3 font-mono text-[var(--game-muted)]">{idx + 1}</td>
@@ -224,7 +227,9 @@ export function StandingsTable({ game }: { game: PublicGamePayload }) {
                                         <>
                                             <td className="px-4 py-3 text-right font-mono tabular-nums">{r.minNetRound ?? "—"}</td>
                                             <td className="px-4 py-3 text-right font-mono tabular-nums">{r.maxNetRound ?? "—"}</td>
-                                            <td className="px-4 py-3 text-right font-mono tabular-nums">{r.hundredTapEvents ?? 0}</td>
+                                            <td className="px-4 py-3 text-right font-mono tabular-nums">
+                                                {r.hundredTapEvents ?? 0} / {r.wentOutRounds ?? 0}
+                                            </td>
                                         </>
                                     ) : (
                                         <>

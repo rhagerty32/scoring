@@ -16,6 +16,7 @@ const createBody = z.discriminatedUnion("type", [
   z.object({
     type: z.literal("2500"),
     targetScore: z.coerce.number().int().min(1).max(100_000),
+    showPlayedCards: z.boolean().optional(),
   }),
   z.object({
     type: z.literal("hand-and-foot"),
@@ -48,12 +49,16 @@ export async function POST(req: Request) {
       const roundWinBonus =
         parsed.data.type === "nertz" ? parsed.data.roundWinBonus : 0;
 
+      const showPlayedCards =
+        parsed.data.type === "2500" && parsed.data.showPlayedCards === false ? 0 : 1;
+
       await db.insert(games).values({
         id,
         code,
         type: parsed.data.type,
         targetScore,
         roundWinBonus,
+        showPlayedCards: parsed.data.type === "2500" ? showPlayedCards : 1,
         status: "lobby",
         currentRound: 0,
         hostToken,
