@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Questions & ideas
+    url: https://github.com/rhagerty32/scoring/issues/new
+    about: Not sure which template fits? Open a blank issue and describe your question.
